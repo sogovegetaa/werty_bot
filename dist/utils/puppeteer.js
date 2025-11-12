@@ -55,27 +55,37 @@ function findBrowserExecutable() {
         `Проверенные пути: ${possiblePaths.join(", ")}`);
 }
 export async function launchPuppeteer() {
-    const executablePath = findBrowserExecutable();
-    console.log(`[Puppeteer] Используется браузер: ${executablePath}`);
-    const browser = await puppeteer.launch({
-        executablePath,
-        headless: "new",
-        userDataDir: "/tmp/puppeteer-profile",
-        args: [
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage",
-            "--disable-gpu",
-            "--no-zygote",
-            "--single-process",
-            "--disable-extensions",
-            "--disable-background-networking",
-        ],
-        env: {
-            ...process.env,
-            PUPPETEER_CACHE_DIR: "/dev/null",
-            PUPPETEER_SKIP_DOWNLOAD: "true",
-        },
-    });
-    return browser;
+    try {
+        console.log(`[Puppeteer] Начало поиска браузера...`);
+        console.log(`[Puppeteer] PUPPETEER_EXECUTABLE_PATH: ${process.env.PUPPETEER_EXECUTABLE_PATH || "не установлен"}`);
+        const executablePath = findBrowserExecutable();
+        console.log(`[Puppeteer] ✓ Найден браузер: ${executablePath}`);
+        console.log(`[Puppeteer] Проверка существования файла: ${existsSync(executablePath) ? "✓ существует" : "✗ не существует"}`);
+        const browser = await puppeteer.launch({
+            executablePath,
+            headless: "new",
+            userDataDir: "/tmp/puppeteer-profile",
+            args: [
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-gpu",
+                "--no-zygote",
+                "--single-process",
+                "--disable-extensions",
+                "--disable-background-networking",
+            ],
+            env: {
+                ...process.env,
+                PUPPETEER_CACHE_DIR: "/dev/null",
+                PUPPETEER_SKIP_DOWNLOAD: "true",
+            },
+        });
+        console.log(`[Puppeteer] ✓ Браузер успешно запущен`);
+        return browser;
+    }
+    catch (error) {
+        console.error(`[Puppeteer] ✗ Ошибка запуска браузера:`, error);
+        throw error;
+    }
 }

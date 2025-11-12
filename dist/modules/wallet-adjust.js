@@ -2,7 +2,7 @@ import { bot } from "../index.js";
 import { supabase } from "../api.js";
 import { formatWithApostrophe, evaluateMathExpression, parseFlexibleNumber } from "../utils/format.js";
 import { parsePairAndAmount } from "./rate.js";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
 export const walletAdjustModule = async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text?.trim() || "";

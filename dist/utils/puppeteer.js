@@ -1,4 +1,4 @@
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
 import { existsSync } from "fs";
 /**
  * Запускает Puppeteer с правильной конфигурацией для сервера

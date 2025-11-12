@@ -5,21 +5,15 @@ import { walletAdjustModule } from "./modules/wallet-adjust.js";
 import { sendReportXls } from "./modules/report.js";
 import { sendOrdersReportXls } from "./modules/orders-report.js";
 const token = process.env.BOT_TOKEN;
-console.log("[Bot] Инициализация бота...");
-console.log(`[Bot] PUPPETEER_EXECUTABLE_PATH: ${process.env.PUPPETEER_EXECUTABLE_PATH || "не установлен"}`);
 export const bot = new TelegramBot(token, { polling: true });
-console.log("[Bot] ✓ Бот инициализирован, запускается polling...");
 // Graceful shutdown - корректное завершение polling при остановке процесса
 let isShuttingDown = false;
 async function shutdown() {
     if (isShuttingDown)
         return;
     isShuttingDown = true;
-    console.log("\n[Shutdown] Получен сигнал завершения, останавливаю бота...");
     try {
-        // Останавливаем polling
         await bot.stopPolling();
-        console.log("[Shutdown] Polling остановлен");
     }
     catch (error) {
         console.error("[Shutdown] Ошибка при остановке polling:", error);
@@ -27,26 +21,19 @@ async function shutdown() {
     process.exit(0);
 }
 // Обработка сигналов завершения процесса
-process.on("SIGINT", shutdown); // Ctrl+C
-process.on("SIGTERM", shutdown); // PM2 stop, systemd stop и т.д.
-process.on("SIGUSR2", shutdown); // Nodemon restart
-console.log("[Bot] ✓ Обработчики сигналов установлены");
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
+process.on("SIGUSR2", shutdown);
 // Обработка ошибок polling
 bot.on("polling_error", (error) => {
-    // Игнорируем ошибки 409 (конфликт), если это происходит при завершении
-    if (isShuttingDown) {
+    if (isShuttingDown)
         return;
-    }
-    console.error("[Polling Error]", error);
-    // Если это конфликт 409, предупреждаем пользователя
     // @ts-ignore
     if (error.code === "ETELEGRAM" && error.message?.includes("409")) {
-        console.error("\n⚠️  ВНИМАНИЕ: Обнаружен конфликт polling (409). " +
-            "Убедитесь, что запущен только один экземпляр бота.\n" +
-            "Проверьте:\n" +
-            "  - PM2 процессы: pm2 list\n" +
-            "  - Локальные процессы: ps aux | grep node\n" +
-            "  - Другие запущенные экземпляры бота\n");
+        console.error("[Polling Error] 409 Conflict: убедитесь, что запущен только один экземпляр бота");
+    }
+    else {
+        console.error("[Polling Error]", error);
     }
 });
 bot.setMyCommands([

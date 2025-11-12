@@ -18,7 +18,7 @@
     "exceljs": "^4.4.0",
     "node-telegram-bot-api": "^0.66.0",
     "nodemon": "^3.1.10",
-    "puppeteer": "^19.11.1"
+    "puppeteer-core": "^19.11.1"
   },
   "devDependencies": {
     "@types/node": "^24.9.1",

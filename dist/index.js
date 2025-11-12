@@ -6,6 +6,45 @@ import { sendReportXls } from "./modules/report.js";
 import { sendOrdersReportXls } from "./modules/orders-report.js";
 const token = process.env.BOT_TOKEN;
 export const bot = new TelegramBot(token, { polling: true });
+// Graceful shutdown - корректное завершение polling при остановке процесса
+let isShuttingDown = false;
+async function shutdown() {
+    if (isShuttingDown)
+        return;
+    isShuttingDown = true;
+    console.log("\n[Shutdown] Получен сигнал завершения, останавливаю бота...");
+    try {
+        // Останавливаем polling
+        await bot.stopPolling();
+        console.log("[Shutdown] Polling остановлен");
+    }
+    catch (error) {
+        console.error("[Shutdown] Ошибка при остановке polling:", error);
+    }
+    process.exit(0);
+}
+// Обработка сигналов завершения процесса
+process.on("SIGINT", shutdown); // Ctrl+C
+process.on("SIGTERM", shutdown); // PM2 stop, systemd stop и т.д.
+process.on("SIGUSR2", shutdown); // Nodemon restart
+// Обработка ошибок polling
+bot.on("polling_error", (error) => {
+    // Игнорируем ошибки 409 (конфликт), если это происходит при завершении
+    if (isShuttingDown) {
+        return;
+    }
+    console.error("[Polling Error]", error);
+    // Если это конфликт 409, предупреждаем пользователя
+    // @ts-ignore
+    if (error.code === "ETELEGRAM" && error.message?.includes("409")) {
+        console.error("\n⚠️  ВНИМАНИЕ: Обнаружен конфликт polling (409). " +
+            "Убедитесь, что запущен только один экземпляр бота.\n" +
+            "Проверьте:\n" +
+            "  - PM2 процессы: pm2 list\n" +
+            "  - Локальные процессы: ps aux | grep node\n" +
+            "  - Другие запущенные экземпляры бота\n");
+    }
+});
 bot.setMyCommands([
     { command: "start", description: "Начать работу с ботом" },
     { command: "help", description: "Помощь по командам" },

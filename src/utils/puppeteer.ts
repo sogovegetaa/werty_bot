@@ -1,6 +1,6 @@
 import puppeteer from 'puppeteer';
 
-export async function launchBrowser() {
+export async function launchPuppeteer() {
   const browser = await puppeteer.launch({
     executablePath:
       process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium-browser',

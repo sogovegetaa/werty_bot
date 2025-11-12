@@ -1,13 +1,21 @@
 import puppeteer from "puppeteer-core";
 import { execSync } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, mkdirSync, rmSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 function findBrowserExecutable() {
-    // Если путь указан в переменной окружения, используем его
+    // Если путь указан в переменной окружения, используем его и проверяем строго
     if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-        if (existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
-            return process.env.PUPPETEER_EXECUTABLE_PATH;
+        const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
+        console.log(`[Puppeteer] Проверка пути из переменной окружения: ${envPath}`);
+        if (existsSync(envPath)) {
+            console.log(`[Puppeteer] ✓ Файл существует: ${envPath}`);
+            return envPath;
         }
-        throw new Error(`PUPPETEER_EXECUTABLE_PATH указан, но файл не найден: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
+        console.error(`[Puppeteer] ✗ Файл НЕ существует: ${envPath}`);
+        throw new Error(`PUPPETEER_EXECUTABLE_PATH указан как "${envPath}", но файл не найден!\n` +
+            `Проверьте, что файл существует: ls -la ${envPath}\n` +
+            `Если Chromium установлен через snap, убедитесь, что он доступен: which chromium`);
     }
     // Возможные пути к браузерам
     const possiblePaths = [
@@ -24,9 +32,12 @@ function findBrowserExecutable() {
         "/opt/google/chrome/chrome",
         "/usr/local/bin/chromium",
     ];
-    // Проверяем каждый путь
+    // Проверяем каждый путь с логированием
+    console.log(`[Puppeteer] Поиск браузера в стандартных путях...`);
     for (const path of possiblePaths) {
+        console.log(`[Puppeteer] Проверка: ${path} - ${existsSync(path) ? "✓ существует" : "✗ не найден"}`);
         if (existsSync(path)) {
+            console.log(`[Puppeteer] ✓ Найден браузер: ${path}`);
             return path;
         }
     }
@@ -55,16 +66,23 @@ function findBrowserExecutable() {
         `Проверенные пути: ${possiblePaths.join(", ")}`);
 }
 export async function launchPuppeteer() {
+    // Создаем уникальный временный каталог для каждого запуска браузера
+    // Это решает проблему с SingletonLock, когда несколько экземпляров пытаются использовать один userDataDir
+    const uniqueId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const userDataDir = join(tmpdir(), `puppeteer-profile-${uniqueId}`);
     try {
         console.log(`[Puppeteer] Начало поиска браузера...`);
         console.log(`[Puppeteer] PUPPETEER_EXECUTABLE_PATH: ${process.env.PUPPETEER_EXECUTABLE_PATH || "не установлен"}`);
         const executablePath = findBrowserExecutable();
         console.log(`[Puppeteer] ✓ Найден браузер: ${executablePath}`);
         console.log(`[Puppeteer] Проверка существования файла: ${existsSync(executablePath) ? "✓ существует" : "✗ не существует"}`);
+        console.log(`[Puppeteer] Используется уникальный userDataDir: ${userDataDir}`);
+        // Создаем временный каталог
+        mkdirSync(userDataDir, { recursive: true });
         const browser = await puppeteer.launch({
             executablePath,
             headless: "new",
-            userDataDir: "/tmp/puppeteer-profile",
+            userDataDir,
             args: [
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
@@ -74,6 +92,7 @@ export async function launchPuppeteer() {
                 "--single-process",
                 "--disable-extensions",
                 "--disable-background-networking",
+                "--disable-blink-features=AutomationControlled",
             ],
             env: {
                 ...process.env,
@@ -82,9 +101,51 @@ export async function launchPuppeteer() {
             },
         });
         console.log(`[Puppeteer] ✓ Браузер успешно запущен`);
+        // Переопределяем метод close для автоматической очистки временного каталога
+        // Защита от множественных вызовов close()
+        let isClosing = false;
+        const originalClose = browser.close.bind(browser);
+        browser.close = async () => {
+            if (isClosing) {
+                console.log(`[Puppeteer] ⚠️ Браузер уже закрывается, пропускаем повторный вызов`);
+                return;
+            }
+            isClosing = true;
+            try {
+                await originalClose();
+                // Удаляем временный каталог после закрытия браузера
+                try {
+                    rmSync(userDataDir, { recursive: true, force: true });
+                    console.log(`[Puppeteer] ✓ Временный каталог удален: ${userDataDir}`);
+                }
+                catch (cleanupError) {
+                    console.warn(`[Puppeteer] ⚠️ Не удалось удалить временный каталог: ${userDataDir}`, cleanupError);
+                }
+            }
+            catch (error) {
+                console.error(`[Puppeteer] ✗ Ошибка при закрытии браузера:`, error);
+                // Все равно пытаемся удалить временный каталог
+                try {
+                    rmSync(userDataDir, { recursive: true, force: true });
+                }
+                catch (cleanupError) {
+                    // Игнорируем ошибки очистки
+                }
+                throw error;
+            }
+        };
         return browser;
     }
     catch (error) {
+        // Удаляем временный каталог в случае ошибки
+        try {
+            if (existsSync(userDataDir)) {
+                rmSync(userDataDir, { recursive: true, force: true });
+            }
+        }
+        catch (cleanupError) {
+            // Игнорируем ошибки очистки
+        }
         console.error(`[Puppeteer] ✗ Ошибка запуска браузера:`, error);
         throw error;
     }

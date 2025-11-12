@@ -34,6 +34,15 @@ fi
 
 echo "✓ Новый код найден"
 
+echo "🔍 Проверка наличия Chromium..."
+if [ -f "/snap/bin/chromium" ]; then
+    echo "✓ Chromium найден: /snap/bin/chromium"
+else
+    echo "⚠️  ВНИМАНИЕ: /snap/bin/chromium не найден!"
+    echo "Попробуем установить: sudo snap install chromium"
+    which chromium > /dev/null 2>&1 && echo "✓ Chromium найден через which: $(which chromium)" || echo "✗ Chromium не найден в PATH"
+fi
+
 echo "🚀 Запуск бота через PM2..."
 pm2 start ecosystem.config.cjs
 

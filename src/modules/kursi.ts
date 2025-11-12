@@ -78,8 +78,9 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
 
   const url = `https://kursi.ge/en/`;
 
+  let browser: any = null;
   try {
-    const browser = await launchPuppeteer();
+    browser = await launchPuppeteer();
     const page = await browser.newPage();
     await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 2 });
     // Desktop user-agent для ПК-версии сайта
@@ -264,5 +265,16 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
 
   } catch (e) {
     console.error("/ккурс error:", e);
+  } finally {
+    // Гарантируем закрытие браузера в любом случае
+    if (browser) {
+      try {
+        if (browser.isConnected()) {
+          await browser.close();
+        }
+      } catch (closeError) {
+        console.error("/ккурс error при закрытии браузера:", closeError);
+      }
+    }
   }
 };

@@ -7,7 +7,12 @@ import { sendOrdersReportXls } from "./modules/orders-report.js";
 
 const token = process.env.BOT_TOKEN!;
 
+console.log("[Bot] Инициализация бота...");
+console.log(`[Bot] PUPPETEER_EXECUTABLE_PATH: ${process.env.PUPPETEER_EXECUTABLE_PATH || "не установлен"}`);
+
 export const bot = new TelegramBot(token, { polling: true });
+
+console.log("[Bot] ✓ Бот инициализирован, запускается polling...");
 
 // Graceful shutdown - корректное завершение polling при остановке процесса
 let isShuttingDown = false;
@@ -33,6 +38,8 @@ async function shutdown() {
 process.on("SIGINT", shutdown); // Ctrl+C
 process.on("SIGTERM", shutdown); // PM2 stop, systemd stop и т.д.
 process.on("SIGUSR2", shutdown); // Nodemon restart
+
+console.log("[Bot] ✓ Обработчики сигналов установлены");
 
 // Обработка ошибок polling
 bot.on("polling_error", (error) => {

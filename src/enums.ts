@@ -1,0 +1,15 @@
+export enum BotCommands {
+    START = "/start",
+    HELP = "/help",
+    PR = "/пр",
+    GIVE = "/дай",
+    SEND = "/отпр",
+    ORDERS = "/заявки",
+    CANCEL = "/отмена",
+    CHANGE = "/изм",
+    CALC = "/калк",
+    ADD_ACCOUNT = "/добавь",
+    DELETE_ACCOUNT = "/удали",
+    RATE = "/курс",
+    KURSI_RATE = "/ккурс",
+}

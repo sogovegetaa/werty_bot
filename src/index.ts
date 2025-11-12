@@ -9,35 +9,25 @@ const token = process.env.BOT_TOKEN!;
 
 export const bot = new TelegramBot(token, { polling: true });
 
-// Graceful shutdown - корректное завершение polling при остановке процесса
 let isShuttingDown = false;
 
 async function shutdown() {
   if (isShuttingDown) return;
   isShuttingDown = true;
-
   try {
     await bot.stopPolling();
   } catch (error) {
-    console.error("[Shutdown] Ошибка при остановке polling:", error);
+    console.error("[Shutdown] Ошибка:", error);
   }
-
   process.exit(0);
 }
 
-// Обработка сигналов завершения процесса
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 process.on("SIGUSR2", shutdown);
 
-// Обработка ошибок polling
 bot.on("polling_error", (error) => {
-  if (isShuttingDown) return;
-  
-  // @ts-ignore
-  if (error.code === "ETELEGRAM" && error.message?.includes("409")) {
-    console.error("[Polling Error] 409 Conflict: убедитесь, что запущен только один экземпляр бота");
-  } else {
+  if (!isShuttingDown) {
     console.error("[Polling Error]", error);
   }
 });

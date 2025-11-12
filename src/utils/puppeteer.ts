@@ -1,33 +1,14 @@
 import puppeteer from "puppeteer-core";
-import { existsSync, mkdirSync, rmSync } from "fs";
+import { mkdirSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-
-function findBrowserExecutable(): string {
-  if (process.env.PUPPETEER_EXECUTABLE_PATH) {
-    const envPath = process.env.PUPPETEER_EXECUTABLE_PATH;
-    if (existsSync(envPath)) {
-      return envPath;
-    }
-    throw new Error(`PUPPETEER_EXECUTABLE_PATH указан как "${envPath}", но файл не найден`);
-  }
-
-  const defaultPath = "/snap/bin/chromium";
-  if (existsSync(defaultPath)) {
-    return defaultPath;
-  }
-
-  throw new Error(
-    `Браузер не найден. Установите Chromium: sudo snap install chromium, либо укажите путь в переменной окружения PUPPETEER_EXECUTABLE_PATH`
-  );
-}
 
 export async function launchPuppeteer() {
   const uniqueId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
   const userDataDir = join(tmpdir(), `puppeteer-profile-${uniqueId}`);
+  const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH || "/snap/bin/chromium";
   
   try {
-    const executablePath = findBrowserExecutable();
     mkdirSync(userDataDir, { recursive: true });
 
     const browser = await puppeteer.launch({
@@ -72,9 +53,7 @@ export async function launchPuppeteer() {
     return browser;
   } catch (error) {
     try {
-      if (existsSync(userDataDir)) {
-        rmSync(userDataDir, { recursive: true, force: true });
-      }
+      rmSync(userDataDir, { recursive: true, force: true });
     } catch {
       // Игнорируем ошибки очистки
     }

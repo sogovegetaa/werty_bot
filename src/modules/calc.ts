@@ -194,6 +194,167 @@ export const calcModule = async (msg: Message): Promise<void> => {
     .replace(/,/g, ".")
     .replace(/[–—−]/g, "-");
 
+  // Новый формат: несколько конвертаций вида "eurusd (100000/0.991+100)" в одном выражении:
+  // /калк eurusd (100000/0.991+100) - eurusd (100000/0.993+100)
+  const multiCurrencyRegex = /([a-z]{3,10})\s*\(([^()]+)\)/gi;
+  const multiMatches = [...normalized.matchAll(multiCurrencyRegex)];
+
+  if (multiMatches.length > 0) {
+    type Segment = {
+      full: string;
+      placeholder: string;
+      base: string;
+      quote: string;
+      amount: number;
+      converted: number;
+    };
+
+    const segments: Segment[] = [];
+
+    try {
+      for (let i = 0; i < multiMatches.length; i++) {
+        const m = multiMatches[i];
+        const full = m[0];
+        const pairRaw = m[1];
+        const innerExpr = m[2];
+
+        // Считаем внутреннее выражение (например: 100000/0.991+100)
+        const innerNormalized = innerExpr
+          .replace(/,/g, ".")
+          .replace(/[–—−]/g, "-");
+
+        let innerWithPercent = innerNormalized.replace(
+          /(\d+(?:\.\d+)?)\s*([+\-])\s*(\d+(?:\.\d+)?)%/g,
+          (_mm, a: string, op: string, b: string) => `(${a}${op}(${a}*(${b}/100)))`
+        );
+        innerWithPercent = innerWithPercent.replace(
+          /(\d+(?:\.\d+)?)%/g,
+          (_mm, x: string) => `((${x})/100)`
+        );
+
+        const innerSafe = innerWithPercent.replace(/[^-+*/().0-9\s]/g, "");
+        const amount = Function(`"use strict"; return (${innerSafe})`)();
+
+        if (isNaN(amount)) {
+          await bot.sendMessage(chatId, "❌ Не удалось вычислить выражение для суммы конвертации.");
+          return;
+        }
+
+        const parsedPair = parsePairAndAmount(`/курс ${pairRaw} ${amount}`);
+        if (!parsedPair) {
+          await bot.sendMessage(chatId, `❌ Неверная валютная пара: ${pairRaw}.`);
+          return;
+        }
+
+        const { base, quote } = parsedPair;
+
+        const url = `https://www.xe.com/currencyconverter/convert/?Amount=${encodeURIComponent(
+          amount
+        )}&From=${encodeURIComponent(base)}&To=${encodeURIComponent(quote)}`;
+
+        const browser = await launchPuppeteer();
+        const page = await browser.newPage();
+        await page.setUserAgent(
+          "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+        );
+        await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+        await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
+        await page.waitForSelector('div[data-testid="conversion"]', { timeout: 10000 });
+        await page.waitForTimeout(1500);
+
+        const convertedText = await page.evaluate(() => {
+          const element = document.querySelector("p.sc-c5062ab2-1.jKDFIr");
+          return element?.textContent?.trim() || null;
+        });
+
+        await browser.close();
+
+        if (!convertedText) {
+          await bot.sendMessage(chatId, "❌ Не удалось получить данные с XE.com.");
+          return;
+        }
+
+        const cleaned = convertedText.replace(/\s+/g, "");
+        const numberMatch = cleaned.match(/^([\d,]+\.?\d*)/);
+        if (!numberMatch) {
+          await bot.sendMessage(chatId, "❌ Не удалось разобрать ответ XE.com.");
+          return;
+        }
+
+        const convertedValueStr = numberMatch[1].replace(/,/g, "");
+        const convertedValueNum = parseFloat(convertedValueStr);
+
+        if (isNaN(convertedValueNum)) {
+          await bot.sendMessage(chatId, "❌ Не удалось преобразовать сумму из XE.com.");
+          return;
+        }
+
+        segments.push({
+          full,
+          placeholder: `__C${i}__`,
+          base,
+          quote,
+          amount,
+          converted: convertedValueNum,
+        });
+      }
+
+      // Собираем итоговое выражение: подставляем вместо eurusd(...) полученные числа
+      let exprForCalc = normalized;
+      for (const seg of segments) {
+        exprForCalc = exprForCalc.replace(seg.full, seg.placeholder);
+      }
+      for (const seg of segments) {
+        exprForCalc = exprForCalc.replace(seg.placeholder, seg.converted.toString());
+      }
+
+      // Поддержка процентов в итоговом выражении
+      let withPercentFinal = exprForCalc.replace(
+        /(\d+(?:\.\d+)?)\s*([+\-])\s*(\d+(?:\.\d+)?)%/g,
+        (_m, a: string, op: string, b: string) => `(${a}${op}(${a}*(${b}/100)))`
+      );
+      withPercentFinal = withPercentFinal.replace(
+        /(\d+(?:\.\d+)?)%/g,
+        (_m, x: string) => `((${x})/100)`
+      );
+
+      const expressionFinal = withPercentFinal.replace(/[^-+*/().0-9\s]/g, "");
+      const finalResult = Function(`"use strict"; return (${expressionFinal})`)();
+
+      if (isNaN(finalResult)) {
+        await bot.sendMessage(chatId, "❌ Не удалось вычислить итоговое выражение.");
+        return;
+      }
+
+      const lines: string[] = [];
+      for (const seg of segments) {
+        const formattedAmount = Number(seg.amount.toFixed(6)).toLocaleString("ru-RU");
+        const formattedConverted = seg.converted.toLocaleString("ru-RU", {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 6,
+        });
+        lines.push(
+          `${formattedAmount} ${seg.base} → ${seg.quote} = ${formattedConverted}`
+        );
+      }
+
+      const displayExprFinal = exprForCalc.replace(/\s+/g, "");
+      const formattedFinal = Number(finalResult.toFixed(6)).toLocaleString("ru-RU");
+
+      await bot.sendMessage(
+        chatId,
+        `<code>${lines.join("\n")}</code>\n\n` +
+          `<code>${displayExprFinal}</code> = <code>${formattedFinal}</code>`,
+        { parse_mode: "HTML" }
+      );
+      return;
+    } catch (err) {
+      console.error("/калк multi-currency error:", err);
+      await bot.sendMessage(chatId, "⚠️ Ошибка при вычислении выражения с конвертацией валют.");
+      return;
+    }
+  }
+
   // Что показываем пользователю (без лишних пробелов, сохраняем %)
   const displayExpr = normalized.replace(/\s+/g, "");
 

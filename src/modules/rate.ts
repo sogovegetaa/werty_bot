@@ -285,12 +285,118 @@ export const rateModule = async (msg: Message): Promise<void> => {
         const displayExpr = exprForCalc.replace(/\s+/g, "");
         const formattedFinal = Number(finalResult.toFixed(6)).toLocaleString("ru-RU");
 
-        await bot.sendMessage(
-          chatId,
-          `<code>${lines.join("\n")}</code>\n\n` +
-            `<code>${displayExpr}</code> = <code>${formattedFinal}</code>`,
-          { parse_mode: "HTML" }
-        );
+        // Используем первую конвертацию для скрина XE, а расчёт выводим в caption
+        const mainSeg = segments[0];
+        const url = `https://www.xe.com/currencyconverter/convert/?Amount=${encodeURIComponent(
+          mainSeg.amount
+        )}&From=${encodeURIComponent(mainSeg.base)}&To=${encodeURIComponent(mainSeg.quote)}`;
+
+        try {
+          const browser = await launchPuppeteer();
+          const page = await browser.newPage();
+
+          await page.setUserAgent(
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+          );
+          await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+
+          await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
+          await page.waitForSelector('div[data-testid="conversion"]', {
+            timeout: 10000,
+          });
+          await page.waitForTimeout(1500);
+
+          const convertedText = await page.evaluate(() => {
+            const element = document.querySelector("p.sc-c5062ab2-1.jKDFIr");
+            if (!element) return null;
+            return element.textContent?.trim() || null;
+          });
+
+          const ratesData = await page.evaluate(() => {
+            const element = document.querySelector("div.sc-98b4ec47-0.jnAVFH");
+            if (!element) return null;
+            const paragraphs = element.querySelectorAll("p");
+            const rates: string[] = [];
+            paragraphs.forEach((p) => {
+              const t = p.textContent?.trim();
+              if (t) rates.push(t);
+            });
+            return rates.length > 0 ? rates : null;
+          });
+
+          let convertedValueNum: number | null = null;
+          if (convertedText) {
+            const cleaned = convertedText.replace(/\s+/g, "");
+            const numberMatch = cleaned.match(/^([\d,]+\.?\d*)/);
+            if (numberMatch) {
+              const convertedValueStr = numberMatch[1].replace(/,/g, "");
+              convertedValueNum = parseFloat(convertedValueStr);
+            }
+          }
+
+          if (!convertedValueNum) {
+            await browser.close();
+            await bot.sendMessage(chatId, "❌ Не удалось получить данные с XE.com.");
+            return;
+          }
+
+          let rate1Text: string | null = null;
+          let rate2Text: string | null = null;
+          if (ratesData && ratesData.length > 0) {
+            rate1Text = ratesData[0];
+            if (ratesData.length > 1) rate2Text = ratesData[1];
+          }
+
+          const now = new Date();
+          const day = String(now.getUTCDate()).padStart(2, "0");
+          const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+          const year = now.getUTCFullYear();
+          const dateStr = `${day}-${month}-${year}`;
+
+          const formattedAmountMain = mainSeg.amount.toLocaleString("ru-RU", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          });
+          const formattedConvertedMain = convertedValueNum.toLocaleString("ru-RU", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 8,
+          });
+
+          let caption =
+            `${formattedAmountMain} ${mainSeg.base} → ${mainSeg.quote}\n\n` +
+            `XE Rate, ${dateStr}\n`;
+          if (rate1Text) caption += `${rate1Text}\n`;
+          if (rate2Text) caption += `${rate2Text}\n`;
+          caption += `\n<code>${formattedConvertedMain}</code> ${mainSeg.quote}`;
+
+          // Добавляем блок с расчётами по всем сегментам
+          caption += `\n\n<code>${lines.join("\n")}</code>\n\n` +
+            `<code>${displayExpr}</code> = <code>${formattedFinal}</code>`;
+
+          const converterBlock = await page.$(
+            "div.relative.bg-gradient-to-l.from-blue-850.to-blue-700"
+          );
+          if (converterBlock) {
+            const buf = await converterBlock.screenshot({ type: "png" });
+            await browser.close();
+            await bot.sendPhoto(chatId, buf as any, {
+              caption,
+              parse_mode: "HTML",
+            });
+          } else {
+            await browser.close();
+            await bot.sendMessage(chatId, caption, { parse_mode: "HTML" });
+            await bot.sendMessage(chatId, `Ссылка XE: ${url}`);
+          }
+        } catch (e) {
+          console.error("/курс calc screenshot error:", e);
+          await bot.sendMessage(
+            chatId,
+            `<code>${lines.join("\n")}</code>\n\n` +
+              `<code>${displayExpr}</code> = <code>${formattedFinal}</code>`,
+            { parse_mode: "HTML" }
+          );
+        }
         return;
       }
     } catch (e) {
@@ -424,7 +530,7 @@ export const rateModule = async (msg: Message): Promise<void> => {
       });
       const convertedForFormula = convertedValueNum.toFixed(2);
       const divisorForFormula = divisor.toString().replace(".", ",");
-      message += `\n\n📊Расчет с делителем ${divisorForFormula}:\n`;
+      message += `\n\n📊Rate adjustment:\n`;
       message += `<code>${convertedForFormula} / ${divisorForFormula} = ${formattedFinal}</code>`;
     }
 

@@ -65,6 +65,15 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
   const chatId = msg.chat.id;
   const text = msg.text?.trim() || "";
 
+  // Информация о расширенном выражении (для добавления в caption скрина)
+  let calcInfo:
+    | {
+        lines: string[];
+        exprDisplay: string;
+        finalFormatted: string;
+      }
+    | null = null;
+
   // Новый формат для /ккурс по аналогии с /курс:
   //   /ккурс gelusd (100000/0,991+100) - gelusd (100000/0,993+100)
   //   /ккурс gelusd 3500-117000-150000-20000-100000
@@ -205,14 +214,11 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
           return `${a} ${s.base} → ${s.quote}`;
         });
 
-        await bot.sendMessage(
-          chatId,
-          `<code>${formattedLines.join("\n")}</code>\n\n` +
-            `<code>${exprForCalc.replace(/\s+/g, "")}</code> = <code>${Number(
-              finalAmount.toFixed(6)
-            ).toLocaleString("ru-RU")}</code>`,
-          { parse_mode: "HTML" }
-        );
+        calcInfo = {
+          lines: formattedLines,
+          exprDisplay: exprForCalc.replace(/\s+/g, ""),
+          finalFormatted: Number(finalAmount.toFixed(6)).toLocaleString("ru-RU"),
+        };
       }
   }
 
@@ -404,8 +410,14 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
               const formattedFinal = finalAmount.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
               const convertedForFormula = num.toFixed(2).replace('.', ',');
               const divisorForFormula = String(divisor).replace('.', ',');
-              caption += `\n\n📊Расчет с делителем ${divisorForFormula}:\n`;
+              caption += `\n\n📊Rate adjustment:\n`;
               caption += `<code>${convertedForFormula} / ${divisorForFormula} = ${formattedFinal}</code>`;
+            }
+
+            // Если это расширенный режим /ккурс с выражением – добавляем разбор
+            if (calcInfo) {
+              caption += `\n\n<code>${calcInfo.lines.join('\n')}</code>\n\n` +
+                         `<code>${calcInfo.exprDisplay}</code> = <code>${calcInfo.finalFormatted}</code>`;
             }
           }
         }

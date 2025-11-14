@@ -77,8 +77,13 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
   // Новый формат для /ккурс по аналогии с /курс:
   //   /ккурс gelusd (100000/0,991+100) - gelusd (100000/0,993+100)
   //   /ккурс gelusd 3500-117000-150000-20000-100000
+  //
+  // ВАЖНО: если команда уже подходит под стандартный формат
+  // /ккурс <пара> [сумма][/делитель] (например: /ккурс usdgel 15000/1,02),
+  // то расширенный режим НЕ включаем — пусть отрабатывает обычная логика
+  // с amount и divisor.
   const calcMatch = text.match(/^\/ккурс\s+(.+)$/i);
-  if (calcMatch) {
+  if (calcMatch && !parseKursiArgs(text)) {
     const exprPart = calcMatch[1].replace(/,/g, ".").replace(/[–—−]/g, "-");
 
     // 1) Блоки вида "<пара> (выражение)"

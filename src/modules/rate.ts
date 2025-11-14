@@ -92,6 +92,155 @@ export const rateModule = async (msg: Message): Promise<void> => {
   const chatId = msg.chat.id;
   const text = msg.text?.trim() || "";
 
+  // Специальный формат: /курс eurusd 10000%1.5
+  // Смысл: конвертировать 10000 EUR → USD и затем вычесть 1.5% от полученной суммы.
+  const percentMatch = text.match(
+    /^\/курс\s+([^\s]+)\s+([\d.,]+)%([\d.,]+)$/i
+  );
+  if (percentMatch) {
+    const pairRaw = percentMatch[1];
+    const amountStr = percentMatch[2];
+    const percentStr = percentMatch[3];
+
+    const percentVal = parseFloat(percentStr.replace(",", "."));
+    if (isNaN(percentVal) || percentVal <= 0) {
+      await bot.sendMessage(
+        chatId,
+        "❌ Неверный процент. Используй формат: /курс eurusd 10000%1.5"
+      );
+      return;
+    }
+
+    const parsedBase = parsePairAndAmount(`/курс ${pairRaw} ${amountStr}`);
+    if (!parsedBase) {
+      await bot.sendMessage(
+        chatId,
+        "⚙️ Формат: /курс <пара> <сумма>%<процент>\nНапример: /курс eurusd 10000%1.5"
+      );
+      return;
+    }
+
+    const { base, quote, amount } = parsedBase;
+
+    const url = `https://www.xe.com/currencyconverter/convert/?Amount=${encodeURIComponent(
+      amount
+    )}&From=${encodeURIComponent(base)}&To=${encodeURIComponent(quote)}`;
+
+    try {
+      const browser = await launchPuppeteer();
+      const page = await browser.newPage();
+
+      await page.setUserAgent(
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+      );
+      await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
+
+      await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
+      await page.waitForSelector('div[data-testid="conversion"]', {
+        timeout: 10000,
+      });
+      await page.waitForTimeout(1500);
+
+      const convertedText = await page.evaluate(() => {
+        const element = document.querySelector("p.sc-c5062ab2-1.jKDFIr");
+        if (!element) return null;
+        return element.textContent?.trim() || null;
+      });
+
+      const ratesData = await page.evaluate(() => {
+        const element = document.querySelector("div.sc-98b4ec47-0.jnAVFH");
+        if (!element) return null;
+        const paragraphs = element.querySelectorAll("p");
+        const rates: string[] = [];
+        paragraphs.forEach((p) => {
+          const t = p.textContent?.trim();
+          if (t) rates.push(t);
+        });
+        return rates.length > 0 ? rates : null;
+      });
+
+      let convertedValueNum: number | null = null;
+      if (convertedText) {
+        const cleaned = convertedText.replace(/\s+/g, "");
+        const numberMatch = cleaned.match(/^([\d,]+\.?\d*)/);
+        if (numberMatch) {
+          const convertedValueStr = numberMatch[1].replace(/,/g, "");
+          convertedValueNum = parseFloat(convertedValueStr);
+        }
+      }
+
+      if (!convertedValueNum) {
+        await browser.close();
+        await bot.sendMessage(chatId, "❌ Не удалось получить данные с XE.com.");
+        return;
+      }
+
+      let rate1Text: string | null = null;
+      let rate2Text: string | null = null;
+      if (ratesData && ratesData.length > 0) {
+        rate1Text = ratesData[0];
+        if (ratesData.length > 1) rate2Text = ratesData[1];
+      }
+
+      const now = new Date();
+      const day = String(now.getUTCDate()).padStart(2, "0");
+      const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+      const year = now.getUTCFullYear();
+      const dateStr = `${day}-${month}-${year}`;
+
+      const formattedAmount = amount.toLocaleString("ru-RU", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+      const formattedConverted = convertedValueNum.toLocaleString("ru-RU", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 8,
+      });
+
+      // Расчёт с вычитанием процента
+      const discount = (convertedValueNum * percentVal) / 100;
+      const finalAmount = convertedValueNum - discount;
+      const formattedFinal = finalAmount.toLocaleString("ru-RU", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+
+      const convertedForFormula = convertedValueNum.toFixed(2).replace(".", ",");
+      const percentForFormula = percentVal.toString().replace(".", ",");
+
+      let message = `${formattedAmount} ${base} → ${quote}\n\n`;
+      message += `XE Rate, ${dateStr}\n`;
+      if (rate1Text) message += `${rate1Text}\n`;
+      if (rate2Text) message += `${rate2Text}\n`;
+      message += `\n<code>${formattedConverted}</code> ${quote}`;
+
+      message += `\n\n📊Rate adjustment (${percentForFormula}%):\n`;
+      message += `<code>${convertedForFormula} - (${convertedForFormula} * ${percentForFormula}/100) = ${formattedFinal}</code>`;
+
+      const converterBlock = await page.$(
+        "div.relative.bg-gradient-to-l.from-blue-850.to-blue-700"
+      );
+      if (converterBlock) {
+        const buf = await converterBlock.screenshot({ type: "png" });
+        await browser.close();
+        await bot.sendPhoto(chatId, buf as any, {
+          caption: message,
+          parse_mode: "HTML",
+        });
+      } else {
+        await browser.close();
+        await bot.sendMessage(chatId, message, { parse_mode: "HTML" });
+        await bot.sendMessage(chatId, `Ссылка XE: ${url}`);
+      }
+      return;
+    } catch (e) {
+      console.error("/курс percent error:", e);
+      await bot.sendMessage(chatId, "⚠️ Не удалось получить курс.");
+      await bot.sendMessage(chatId, `Ссылка XE: ${url}`);
+      return;
+    }
+  }
+
   // Новый формат: несколько конвертаций внутри выражения:
   //   /курс eurusd (100000/0,991+100) - eurusd (100000/0,993+100)
   //   /курс usdkzt 3500-117000-150000-20000-100000
@@ -103,7 +252,11 @@ export const rateModule = async (msg: Message): Promise<void> => {
   //  - собираем итоговое выражение и считаем его
   const calcPattern = /^\/курс\s+(.+)$/i;
   const calcMatch = text.match(calcPattern);
-  if (calcMatch) {
+  // Если команда уже подходит под стандартный формат
+  // /курс <пара> [сумма] [/делитель] (например: /курс eurusd 10000/1,015),
+  // то расширенный режим не включаем — даём отработать базовой логике
+  // parsePairAndAmount (amount + divisor).
+  if (calcMatch && !parsePairAndAmount(text)) {
     const exprPart = calcMatch[1].replace(/,/g, ".").replace(/[–—−]/g, "-");
 
     // 1) Блоки вида "<пара> (выражение)"

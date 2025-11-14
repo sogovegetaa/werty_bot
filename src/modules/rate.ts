@@ -95,15 +95,16 @@ export const rateModule = async (msg: Message): Promise<void> => {
   // Специальный формат: /курс eurusd 10000%1.5
   // Смысл: конвертировать 10000 EUR → USD и затем вычесть 1.5% от полученной суммы.
   const percentMatch = text.match(
-    /^\/курс\s+([^\s]+)\s+([\d.,]+)%([\d.,]+)$/i
+    /^\/курс\s+([^\s]+)\s+([\d.,]+)%([+\-]?[\d.,]+)$/i
   );
   if (percentMatch) {
     const pairRaw = percentMatch[1];
     const amountStr = percentMatch[2];
-    const percentStr = percentMatch[3];
+    const percentRaw = percentMatch[3];
 
-    const percentVal = parseFloat(percentStr.replace(",", "."));
-    if (isNaN(percentVal) || percentVal <= 0) {
+    const percentVal = parseFloat(percentRaw.replace(",", "."));
+    const percentAbs = Math.abs(percentVal);
+    if (isNaN(percentVal) || percentAbs <= 0) {
       await bot.sendMessage(
         chatId,
         "❌ Неверный процент. Используй формат: /курс eurusd 10000%1.5"
@@ -197,16 +198,20 @@ export const rateModule = async (msg: Message): Promise<void> => {
         maximumFractionDigits: 8,
       });
 
-      // Расчёт с вычитанием процента
-      const discount = (convertedValueNum * percentVal) / 100;
-      const finalAmount = convertedValueNum - discount;
+      // Расчёт с процентной корректировкой
+      const signChar = percentRaw.trim().startsWith("+") ? "+" : "-"; // по умолчанию вычитаем
+      const discount = (convertedValueNum * percentAbs) / 100;
+      const finalAmount =
+        signChar === "+"
+          ? convertedValueNum + discount
+          : convertedValueNum - discount;
       const formattedFinal = finalAmount.toLocaleString("ru-RU", {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
       });
 
       const convertedForFormula = convertedValueNum.toFixed(2).replace(".", ",");
-      const percentForFormula = percentVal.toString().replace(".", ",");
+      const percentForFormula = percentAbs.toString().replace(".", ",");
 
       let message = `${formattedAmount} ${base} → ${quote}\n\n`;
       message += `XE Rate, ${dateStr}\n`;
@@ -214,8 +219,12 @@ export const rateModule = async (msg: Message): Promise<void> => {
       if (rate2Text) message += `${rate2Text}\n`;
       message += `\n<code>${formattedConverted}</code> ${quote}`;
 
-      message += `\n\n📊Rate adjustment (${percentForFormula}%):\n`;
-      message += `<code>${convertedForFormula} - (${convertedForFormula} * ${percentForFormula}/100) = ${formattedFinal}</code>`;
+      message += `\n\n📊Rate adjustment (${signChar}${percentForFormula}%):\n`;
+      if (signChar === "+") {
+        message += `<code>${convertedForFormula} + (${convertedForFormula} * ${percentForFormula}/100) = ${formattedFinal}</code>`;
+      } else {
+        message += `<code>${convertedForFormula} - (${convertedForFormula} * ${percentForFormula}/100) = ${formattedFinal}</code>`;
+      }
 
       const converterBlock = await page.$(
         "div.relative.bg-gradient-to-l.from-blue-850.to-blue-700"

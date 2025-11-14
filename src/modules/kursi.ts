@@ -65,7 +65,158 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
   const chatId = msg.chat.id;
   const text = msg.text?.trim() || "";
 
-  const parsed = parseKursiArgs(text);
+  // Новый формат для /ккурс по аналогии с /курс:
+  //   /ккурс gelusd (100000/0,991+100) - gelusd (100000/0,993+100)
+  //   /ккурс gelusd 3500-117000-150000-20000-100000
+  const calcMatch = text.match(/^\/ккурс\s+(.+)$/i);
+  if (calcMatch) {
+    const exprPart = calcMatch[1].replace(/,/g, ".").replace(/[–—−]/g, "-");
+
+    // 1) Блоки вида "<пара> (выражение)"
+    const complexRegex = /([a-z]{3,10})\s*\(([^()]+)\)/gi;
+    // 2) Блоки вида "<пара> <число><операции...>"
+    const simpleRegex = /([a-z]{3,10})\s+(\d+(?:\.\d+)?(?:[+\-*/]\d+(?:\.\d+)?)+)/gi;
+
+    const complexMatches = [...exprPart.matchAll(complexRegex)];
+    const simpleMatches = [...exprPart.matchAll(simpleRegex)];
+
+    type Segment = {
+      full: string;
+      placeholder: string;
+      base: string;
+      quote: string;
+      amount: number;
+      converted: number;
+    };
+
+    const segments: Segment[] = [];
+
+    let placeholderIndex = 0;
+
+      // Обрабатываем сложные блоки "<пара> (выражение)"
+      for (const m of complexMatches) {
+        const full = m[0];
+        const pairRaw = m[1];
+        const innerExpr = m[2];
+
+        const innerNorm = innerExpr.replace(/,/g, ".").replace(/[–—−]/g, "-");
+        const innerSafe = innerNorm.replace(/[^0-9+\-*/().\s]/g, "");
+        const amount = Function(`"use strict"; return (${innerSafe})`)();
+        if (isNaN(amount)) {
+          await bot.sendMessage(
+            chatId,
+            "❌ Не удалось вычислить выражение для суммы конвертации."
+          );
+          return;
+        }
+
+        const parsed = parseKursiArgs(`/ккурс ${pairRaw} ${amount}`);
+        if (!parsed) {
+          await bot.sendMessage(chatId, `❌ Неверная или запрещённая валютная пара: ${pairRaw}.`);
+          return;
+        }
+        const { base, quote } = parsed;
+
+        segments.push({
+          full,
+          placeholder: `__K${placeholderIndex++}__`,
+          base,
+          quote,
+          amount,
+          converted: amount, // временно, конвертация ниже
+        });
+      }
+
+      // Обрабатываем простые блоки "<пара> 3500-117000-150000"
+      for (const m of simpleMatches) {
+        const full = m[0];
+        const pairRaw = m[1];
+        const expr = m[2];
+
+        if (segments.some((s) => s.full === full)) continue;
+
+        const exprNorm = expr.replace(/,/g, ".").replace(/[–—−]/g, "-");
+        const exprSafe = exprNorm.replace(/[^0-9+\-*/().\s]/g, "");
+        const amount = Function(`"use strict"; return (${exprSafe})`)();
+        if (isNaN(amount)) {
+          await bot.sendMessage(
+            chatId,
+            "❌ Не удалось вычислить выражение для суммы конвертации."
+          );
+          return;
+        }
+
+        const parsed = parseKursiArgs(`/ккурс ${pairRaw} ${amount}`);
+        if (!parsed) {
+          await bot.sendMessage(chatId, `❌ Неверная или запрещённая валютная пара: ${pairRaw}.`);
+          return;
+        }
+        const { base, quote } = parsed;
+
+        segments.push({
+          full,
+          placeholder: `__K${placeholderIndex++}__`,
+          base,
+          quote,
+          amount,
+          converted: amount,
+        });
+      }
+
+      // Если удалось найти хотя бы один сегмент — считаем, что это расширенный режим.
+      if (segments.length > 0) {
+        // Для kursi.ge мы не вытаскиваем конвертацию для каждого сегмента отдельно,
+        // так как UI заточен на одну пару за раз. Поэтому:
+        //  - проверяем, что все пары одинаковые
+        //  - считаем суммарную amount по всем сегментам и используем штатный механизм ниже
+        const baseSet = new Set(segments.map((s) => s.base));
+        const quoteSet = new Set(segments.map((s) => s.quote));
+        if (baseSet.size !== 1 || quoteSet.size !== 1) {
+          await bot.sendMessage(
+            chatId,
+            "❌ Для /ккурс в одном выражении должна использоваться одна и та же валютная пара."
+          );
+          return;
+        }
+
+        const totalAmount = segments.reduce((sum, s) => sum + s.amount, 0);
+
+        // Собираем итоговое арифметическое выражение (без пары) ради красоты вывода
+        let exprForCalc = exprPart;
+        for (const seg of segments) {
+          exprForCalc = exprForCalc.replace(seg.full, seg.amount.toString());
+        }
+        const safeFinal = exprForCalc.replace(/[^0-9+\-*/().\s]/g, "");
+        const finalAmount = Function(`"use strict"; return (${safeFinal})`)();
+        if (isNaN(finalAmount)) {
+          await bot.sendMessage(chatId, "❌ Не удалось вычислить выражение.");
+          return;
+        }
+
+        const base = [...baseSet][0];
+        const quote = [...quoteSet][0];
+
+        // Подменяем text так, чтобы ниже сработал стандартный путь: одна пара + amount
+        const syntheticText = `/ккурс ${base.toLowerCase()}${quote.toLowerCase()} ${totalAmount}`;
+        (msg as any).text = syntheticText;
+
+        const formattedLines = segments.map((s) => {
+          const a = Number(s.amount.toFixed(6)).toLocaleString("ru-RU");
+          return `${a} ${s.base} → ${s.quote}`;
+        });
+
+        await bot.sendMessage(
+          chatId,
+          `<code>${formattedLines.join("\n")}</code>\n\n` +
+            `<code>${exprForCalc.replace(/\s+/g, "")}</code> = <code>${Number(
+              finalAmount.toFixed(6)
+            ).toLocaleString("ru-RU")}</code>`,
+          { parse_mode: "HTML" }
+        );
+      }
+  }
+
+  const parsed = parseKursiArgs((msg as any).text ?? text);
   if (!parsed) {
     await bot.sendMessage(
       chatId,
@@ -277,4 +428,4 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
       }
     }
   }
-};
+}

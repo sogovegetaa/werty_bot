@@ -185,7 +185,8 @@ export const rateModule = async (msg: Message): Promise<void> => {
           return;
         }
 
-        const parsedPair = parsePairAndAmount(`/курс ${pairRaw} ${amount}`);
+        // Берём только пару, amount уже посчитан выше (может быть и отрицательным)
+        const parsedPair = parsePairAndAmount(`/курс ${pairRaw}`);
         if (!parsedPair) {
           await bot.sendMessage(chatId, `❌ Неверная валютная пара: ${pairRaw}.`);
           return;
@@ -228,7 +229,8 @@ export const rateModule = async (msg: Message): Promise<void> => {
           return;
         }
 
-        const parsedPair = parsePairAndAmount(`/курс ${pairRaw} ${amount}`);
+        // Берём только пару, amount уже посчитан выше (может быть и отрицательным)
+        const parsedPair = parsePairAndAmount(`/курс ${pairRaw}`);
         if (!parsedPair) {
           await bot.sendMessage(chatId, `❌ Неверная валютная пара: ${pairRaw}.`);
           return;

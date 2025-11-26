@@ -55,24 +55,13 @@ export const walletAddModule = async (msg: Message): Promise<void> => {
       return;
     }
 
-    // Используем user_id первого пользователя, который создал счет в этом чате
-    // Это гарантирует, что все счета в чате имеют один user_id и избегает конфликтов
-    const { data: firstWallet } = await supabase
-      .from("wallet")
-      .select("user_id")
-      .eq("chat_id", chatId)
-      .limit(1)
-      .maybeSingle();
-
-    const walletUserId = firstWallet?.user_id || user.id;
-
     // Создаем счет для всего чата
     const { error } = await supabase
       .from("wallet")
-      .insert({ user_id: walletUserId, chat_id: chatId, code, precision, balance: 0 });
+      .insert({ user_id: user.id, chat_id: chatId, code, precision, balance: 0 });
     
     if (error) {
-      // Если конфликт уникального индекса - проверяем, не создался ли счет параллельно
+      // Если конфликт - проверяем, не создался ли счет параллельно
       if (error.code === '23505') {
         const { data: checkExisting } = await supabase
           .from("wallet")

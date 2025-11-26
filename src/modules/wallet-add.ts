@@ -35,7 +35,7 @@ export const walletAddModule = async (msg: Message): Promise<void> => {
       .select("id, precision")
       .eq("chat_id", chatId)
       .eq("code", code)
-      .single();
+      .maybeSingle();
 
     if (existing) {
       if (match[2]) {
@@ -55,11 +55,43 @@ export const walletAddModule = async (msg: Message): Promise<void> => {
       return;
     }
 
-    // Создаем счет для всего чата (user_id нужен для NOT NULL constraint, но счет общий для всех)
+    // Используем user_id первого пользователя, который создал счет в этом чате
+    // Это гарантирует, что все счета в чате имеют один user_id и избегает конфликтов
+    const { data: firstWallet } = await supabase
+      .from("wallet")
+      .select("user_id")
+      .eq("chat_id", chatId)
+      .limit(1)
+      .maybeSingle();
+
+    const walletUserId = firstWallet?.user_id || user.id;
+
+    // Создаем счет для всего чата
     const { error } = await supabase
       .from("wallet")
-      .insert({ user_id: user.id, chat_id: chatId, code, precision, balance: 0 });
-    if (error) throw error;
+      .insert({ user_id: walletUserId, chat_id: chatId, code, precision, balance: 0 });
+    
+    if (error) {
+      // Если конфликт уникального индекса - проверяем, не создался ли счет параллельно
+      if (error.code === '23505') {
+        const { data: checkExisting } = await supabase
+          .from("wallet")
+          .select("id, precision")
+          .eq("chat_id", chatId)
+          .eq("code", code)
+          .maybeSingle();
+        
+        if (checkExisting) {
+          await bot.sendMessage(
+            chatId,
+            `Счёт уже есть. Точность: <code>${checkExisting.precision}</code>.`,
+            { parse_mode: "HTML" }
+          );
+          return;
+        }
+      }
+      throw error;
+    }
 
     await bot.sendMessage(
       chatId,

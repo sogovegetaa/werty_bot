@@ -33,11 +33,12 @@ export const sendReportXls = async (
     if (codeFilter) txQuery = txQuery.eq("code", codeFilter);
     const { data: txs } = await txQuery;
 
-    // Список актуальных счетов пользователя — чтобы пометить удалённые
+    // Список актуальных счетов пользователя в этом чате — чтобы пометить удалённые
     const { data: accountsNow } = await supabase
       .from("wallet")
       .select("code")
-      .eq("user_id", user.id);
+      .eq("user_id", user.id)
+      .eq("chat_id", chatId);
     const aliveCodes = new Set<string>((accountsNow || []).map((a: any) => a.code));
 
     const wb = new ExcelJS.Workbook();

@@ -29,6 +29,7 @@ export const walletRemoveModule = async (msg: Message): Promise<void> => {
       .from("wallet")
       .select("id, balance, precision")
       .eq("user_id", user.id)
+      .eq("chat_id", chatId)
       .eq("code", code)
       .single();
 
@@ -37,17 +38,40 @@ export const walletRemoveModule = async (msg: Message): Promise<void> => {
       return;
     }
 
-    if (Number(acc.balance || 0) !== 0) {
+    // Проверяем баланс из транзакций (баланс считается из транзакций, а не из поля balance)
+    const { data: transactions } = await supabase
+      .from("wallet_tx")
+      .select("amount")
+      .eq("user_id", user.id)
+      .eq("code", code)
+      .eq("chat_id", chatId);
+
+    const totalBalance = (transactions || []).reduce(
+      (sum, tx) => sum + Number(tx.amount || 0),
+      0
+    );
+
+    if (totalBalance !== 0) {
       await bot.sendMessage(
         chatId,
         `❌ Нельзя удалить счёт с ненулевым балансом. Текущий баланс: <code>${Number(
-          acc.balance || 0
+          totalBalance
         ).toFixed(acc.precision || 2)}</code> ${code}`,
         { parse_mode: "HTML" }
       );
       return;
     }
 
+    // Удаляем все транзакции этого счета только в текущем чате
+    const { error: txError } = await supabase
+      .from("wallet_tx")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("code", code)
+      .eq("chat_id", chatId);
+    if (txError) throw txError;
+
+    // Удаляем сам счет
     const { error } = await supabase.from("wallet").delete().eq("id", acc.id);
     if (error) throw error;
 

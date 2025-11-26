@@ -33,15 +33,13 @@ export const walletAddModule = async (msg: Message): Promise<void> => {
       .from("wallet")
       .select("id, precision")
       .eq("user_id", user.id)
+      .eq("chat_id", chatId)
       .eq("code", code)
       .single();
 
     if (existing) {
       if (match[2]) {
-        await supabase
-          .from("wallet")
-          .update({ precision })
-          .eq("id", existing.id);
+        await supabase.from("wallet").update({ precision }).eq("id", existing.id);
         await bot.sendMessage(
           chatId,
           `Точность обновлена. Теперь <code>${precision}</code> разр. после запятой.`,
@@ -59,7 +57,7 @@ export const walletAddModule = async (msg: Message): Promise<void> => {
 
     const { error } = await supabase
       .from("wallet")
-      .insert({ user_id: user.id, code, precision, balance: 0 });
+      .insert({ user_id: user.id, chat_id: chatId, code, precision, balance: 0 });
     if (error) throw error;
 
     await bot.sendMessage(

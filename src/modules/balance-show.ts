@@ -25,6 +25,13 @@ export const balanceShowModule = async (msg: Message): Promise<void> => {
       return;
     }
 
+    // Получаем все счета из таблицы wallet только для этого чата
+    const { data: walletSettings } = await supabase
+      .from("wallet")
+      .select("code, precision")
+      .eq("user_id", user.id)
+      .eq("chat_id", chatId);
+
     // Получаем все транзакции пользователя в этом чате
     const { data: transactions } = await supabase
       .from("wallet_tx")
@@ -41,33 +48,20 @@ export const balanceShowModule = async (msg: Message): Promise<void> => {
       }
     }
 
-    // Получаем настройки счетов (precision) из таблицы wallet
-    const { data: walletSettings } = await supabase
-      .from("wallet")
-      .select("code, precision")
-      .eq("user_id", user.id);
-
     // Создаем массив счетов с балансами и precision
+    // Показываем все счета из wallet, даже если у них нет транзакций (баланс 0)
     const accounts: Array<{ code: string; balance: number; precision: number }> = [];
     
-    // Добавляем счета, которые есть в транзакциях
-    for (const code of Object.keys(balancesByCode)) {
-      const setting = walletSettings?.find((w) => w.code.toLowerCase() === code);
-      accounts.push({
-        code,
-        balance: balancesByCode[code],
-        precision: setting?.precision || 2,
-      });
-    }
-
-    // Если нет счетов, добавляем дефолтный UAH с балансом 0
-    if (accounts.length === 0) {
-      const defaultSetting = walletSettings?.find((w) => w.code.toLowerCase() === "uah");
-      accounts.push({
-        code: "uah",
-        balance: 0,
-        precision: defaultSetting?.precision || 2,
-      });
+    if (walletSettings && walletSettings.length > 0) {
+      // Добавляем все счета из wallet
+      for (const wallet of walletSettings) {
+        const code = wallet.code.toLowerCase();
+        accounts.push({
+          code,
+          balance: balancesByCode[code] || 0,
+          precision: wallet.precision || 2,
+        });
+      }
     }
 
     // Сортируем по коду
@@ -78,9 +72,13 @@ export const balanceShowModule = async (msg: Message): Promise<void> => {
       return ` <code>${formatted}</code> ${a.code}`;
     });
 
+    const balancesBlock = lines.length
+      ? lines.join("\n")
+      : "Пока нет ни одного счёта. Создайте счёт командой /добавь &lt;код&gt;.";
+
     const message =
       `Средств на руках у неизвестного:\n\n` +
-      (lines.length ? lines.join("\n") : "   0.00 uah") +
+      balancesBlock +
       `\n\nЕсли нужна выписка по одному счёту: напишите /дай &lt;код&gt; и нажмите нужную кнопку.`;
 
     // Кнопки: по умолчанию только общая XLS. Если указан код — одна кнопка для этого счёта

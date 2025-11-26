@@ -105,27 +105,21 @@ export const walletAdjustModule = async (msg: Message): Promise<void> => {
       return;
     }
 
-    // Получаем настройки счета (precision) из таблицы wallet
-    let { data: acc } = await supabase
+    // Получаем настройки счета (precision) из таблицы wallet только для этого чата
+    const { data: acc } = await supabase
       .from("wallet")
       .select("id, precision")
       .eq("user_id", user.id)
+      .eq("chat_id", chatId)
       .eq("code", code)
       .single();
 
     if (!acc) {
-      const defaultPrecision = 2;
-      const { data: created, error: createErr } = await supabase
-        .from("wallet")
-        .insert({ user_id: user.id, code, precision: defaultPrecision, balance: 0 })
-        .select("id, precision")
-        .single();
-      if (createErr) {
-        console.error("wallet auto-create error:", createErr);
-        await bot.sendMessage(chatId, `⚠️ Не удалось создать счёт ${code}.`);
-        return;
-      }
-      acc = created!;
+      await bot.sendMessage(
+        chatId,
+        `❌ Счёт ${code} не найден. Сначала создайте его через /добавь ${code}`
+      );
+      return;
     }
 
     const precision = acc.precision || 2;

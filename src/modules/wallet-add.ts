@@ -55,10 +55,10 @@ export const walletAddModule = async (msg: Message): Promise<void> => {
       return;
     }
 
-    // Создаем счет для всего чата (без user_id, общий для всех)
+    // Создаем счет для всего чата (user_id нужен для NOT NULL constraint, но счет общий для всех)
     const { error } = await supabase
       .from("wallet")
-      .insert({ chat_id: chatId, code, precision, balance: 0 });
+      .insert({ user_id: user.id, chat_id: chatId, code, precision, balance: 0 });
     if (error) throw error;
 
     await bot.sendMessage(

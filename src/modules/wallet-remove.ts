@@ -25,10 +25,10 @@ export const walletRemoveModule = async (msg: Message): Promise<void> => {
       return;
     }
 
+    // Проверяем существование счета в этом чате (общий для всех пользователей)
     const { data: acc } = await supabase
       .from("wallet")
       .select("id, balance, precision")
-      .eq("user_id", user.id)
       .eq("chat_id", chatId)
       .eq("code", code)
       .single();
@@ -38,11 +38,10 @@ export const walletRemoveModule = async (msg: Message): Promise<void> => {
       return;
     }
 
-    // Проверяем баланс из транзакций (баланс считается из транзакций, а не из поля balance)
+    // Проверяем баланс из транзакций всех пользователей в этом чате
     const { data: transactions } = await supabase
       .from("wallet_tx")
       .select("amount")
-      .eq("user_id", user.id)
       .eq("code", code)
       .eq("chat_id", chatId);
 
@@ -62,11 +61,10 @@ export const walletRemoveModule = async (msg: Message): Promise<void> => {
       return;
     }
 
-    // Удаляем все транзакции этого счета только в текущем чате
+    // Удаляем все транзакции этого счета всех пользователей в текущем чате
     const { error: txError } = await supabase
       .from("wallet_tx")
       .delete()
-      .eq("user_id", user.id)
       .eq("code", code)
       .eq("chat_id", chatId);
     if (txError) throw txError;

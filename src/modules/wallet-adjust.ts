@@ -105,11 +105,10 @@ export const walletAdjustModule = async (msg: Message): Promise<void> => {
       return;
     }
 
-    // Получаем настройки счета (precision) из таблицы wallet только для этого чата
+    // Получаем настройки счета (precision) из таблицы wallet для этого чата (общий для всех)
     const { data: acc } = await supabase
       .from("wallet")
       .select("id, precision")
-      .eq("user_id", user.id)
       .eq("chat_id", chatId)
       .eq("code", code)
       .single();
@@ -119,16 +118,15 @@ export const walletAdjustModule = async (msg: Message): Promise<void> => {
         chatId,
         `❌ Счёт ${code} не найден. Сначала создайте его через /добавь ${code}`
       );
-      return;
+        return;
     }
 
     const precision = acc.precision || 2;
 
-    // Получаем текущий баланс из транзакций этого чата
+    // Получаем текущий баланс из транзакций всех пользователей в этом чате
     const { data: chatTransactions } = await supabase
       .from("wallet_tx")
       .select("amount")
-      .eq("user_id", user.id)
       .eq("code", code)
       .eq("chat_id", chatId);
 

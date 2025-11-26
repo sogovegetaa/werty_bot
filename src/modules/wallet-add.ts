@@ -29,10 +29,10 @@ export const walletAddModule = async (msg: Message): Promise<void> => {
       return;
     }
 
+    // Проверяем существование счета в этом чате (общий для всех пользователей)
     const { data: existing } = await supabase
       .from("wallet")
       .select("id, precision")
-      .eq("user_id", user.id)
       .eq("chat_id", chatId)
       .eq("code", code)
       .single();
@@ -55,9 +55,10 @@ export const walletAddModule = async (msg: Message): Promise<void> => {
       return;
     }
 
+    // Создаем счет для всего чата (без user_id, общий для всех)
     const { error } = await supabase
       .from("wallet")
-      .insert({ user_id: user.id, chat_id: chatId, code, precision, balance: 0 });
+      .insert({ chat_id: chatId, code, precision, balance: 0 });
     if (error) throw error;
 
     await bot.sendMessage(

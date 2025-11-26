@@ -25,21 +25,19 @@ export const balanceShowModule = async (msg: Message): Promise<void> => {
       return;
     }
 
-    // Получаем все счета из таблицы wallet только для этого чата
+    // Получаем все счета из таблицы wallet для этого чата (общие для всех пользователей)
     const { data: walletSettings } = await supabase
       .from("wallet")
       .select("code, precision")
-      .eq("user_id", user.id)
       .eq("chat_id", chatId);
 
-    // Получаем все транзакции пользователя в этом чате
+    // Получаем все транзакции всех пользователей в этом чате (общий баланс)
     const { data: transactions } = await supabase
       .from("wallet_tx")
       .select("code, amount")
-      .eq("user_id", user.id)
       .eq("chat_id", chatId);
 
-    // Считаем баланс для каждого счета из транзакций этого чата
+    // Считаем баланс для каждого счета из транзакций всех пользователей в этом чате
     const balancesByCode: Record<string, number> = {};
     if (transactions) {
       for (const tx of transactions) {
@@ -56,12 +54,12 @@ export const balanceShowModule = async (msg: Message): Promise<void> => {
       // Добавляем все счета из wallet
       for (const wallet of walletSettings) {
         const code = wallet.code.toLowerCase();
-        accounts.push({
-          code,
+      accounts.push({
+        code,
           balance: balancesByCode[code] || 0,
           precision: wallet.precision || 2,
-        });
-      }
+      });
+    }
     }
 
     // Сортируем по коду

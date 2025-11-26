@@ -24,20 +24,19 @@ export const sendReportXls = async (
       return;
     }
 
+    // Получаем транзакции всех пользователей в этом чате (общий счет)
     let txQuery = supabase
       .from("wallet_tx")
       .select("created_at, code, amount, balance_after, chat_title, username")
-      .eq("user_id", user.id)
       .eq("chat_id", chatId)
       .order("created_at", { ascending: true });
     if (codeFilter) txQuery = txQuery.eq("code", codeFilter);
     const { data: txs } = await txQuery;
 
-    // Список актуальных счетов пользователя в этом чате — чтобы пометить удалённые
+    // Список актуальных счетов в этом чате (общие для всех) — чтобы пометить удалённые
     const { data: accountsNow } = await supabase
       .from("wallet")
       .select("code")
-      .eq("user_id", user.id)
       .eq("chat_id", chatId);
     const aliveCodes = new Set<string>((accountsNow || []).map((a: any) => a.code));
 

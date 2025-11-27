@@ -7,7 +7,7 @@ export const balanceShowModule = async (msg: Message): Promise<void> => {
   const chatId = msg.chat.id;
   const telegramId = msg.from!.id;
   const text = msg.text?.trim() || "";
-  const m = text.match(/^\/дай(?:\s+([\p{L}A-Za-z]{2,8}))?$/u);
+  const m = text.match(/^\/дай(?:\s+([\p{L}A-Za-z]{2,16}))?$/u);
   const requestedCode = m && m[1] ? m[1].toLowerCase() : undefined;
 
   try {

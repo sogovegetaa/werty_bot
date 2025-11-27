@@ -6,7 +6,7 @@ export const walletAddModule = async (msg: Message): Promise<void> => {
   const chatId = msg.chat.id;
   const text = msg.text?.trim() || "";
 
-  const match = text.match(/^\/добавь\s+([\p{L}]{2,8})(?:\s+(\d))?$/iu);
+  const match = text.match(/^\/добавь\s+([\p{L}]{2,16})(?:\s+(\d))?$/iu);
   if (!match) {
     await bot.sendMessage(
       chatId,

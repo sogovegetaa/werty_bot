@@ -6,7 +6,7 @@ export const walletRemoveModule = async (msg: Message): Promise<void> => {
   const chatId = msg.chat.id;
   const text = msg.text?.trim() || "";
 
-  const match = text.match(/^\/удали\s+([\p{L}]{2,8})$/iu);
+  const match = text.match(/^\/удали\s+([\p{L}]{2,16})$/iu);
   if (!match) {
     await bot.sendMessage(chatId, "⚙️ Формат: /удали <код_счёта>\nПример: /удали usd");
     return;

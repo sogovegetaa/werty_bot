@@ -9,7 +9,7 @@ export const walletAdjustModule = async (msg: Message): Promise<void> => {
   const chatId = msg.chat.id;
   const text = msg.text?.trim() || "";
 
-  const m = text.match(/^\/([\p{L}]{2,8})\s+(.+)/u);
+  const m = text.match(/^\/([\p{L}]{2,16})\s+(.+)/u);
   if (!m) return;
 
   const code = m[1].toLowerCase();

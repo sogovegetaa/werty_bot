@@ -77,12 +77,12 @@ export const orderSendModule = async (msg: Message): Promise<void> => {
           );
           await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
           await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
-          await page.waitForSelector('div[data-testid="conversion"]', { timeout: 10000 });
+          await page.waitForSelector('form[data-hs-cf-bound]', { timeout: 10000 });
           await page.waitForTimeout(1500);
           
           const convertedText = await page.evaluate(() => {
-            const element = document.querySelector("p.sc-c5062ab2-1.jKDFIr");
-            return element?.textContent?.trim() || null;
+            const input = document.querySelector('fieldset:last-of-type input[aria-label="Receiving amount"]') as HTMLInputElement | null;
+            return input?.value?.trim() || null;
           });
           
           await browser.close();

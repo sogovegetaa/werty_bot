@@ -98,26 +98,29 @@ export const rateModule = async (msg: Message): Promise<void> => {
       await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
 
       await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
-      await page.waitForSelector('div[data-testid="conversion"]', {
+      await page.waitForSelector('form[data-hs-cf-bound]', {
         timeout: 10000,
       });
       await page.waitForTimeout(1500);
 
       const convertedText = await page.evaluate(() => {
-        const element = document.querySelector("p.sc-c5062ab2-1.jKDFIr");
-        if (!element) return null;
-        return element.textContent?.trim() || null;
+        const input = document.querySelector('fieldset:last-of-type input[aria-label="Receiving amount"]') as HTMLInputElement | null;
+        if (!input) return null;
+        return input.value?.trim() || null;
       });
 
       const ratesData = await page.evaluate(() => {
-        const element = document.querySelector("div.sc-98b4ec47-0.jnAVFH");
-        if (!element) return null;
-        const paragraphs = element.querySelectorAll("p");
+        const rateElement = document.querySelector('p.text-lg.font-semibold.text-xe-neutral-900');
+        const timeElement = rateElement?.nextElementSibling as HTMLElement | null;
         const rates: string[] = [];
-        paragraphs.forEach((p) => {
-          const t = p.textContent?.trim();
-          if (t) rates.push(t);
-        });
+        if (rateElement) {
+          const rateText = rateElement.textContent?.trim();
+          if (rateText) rates.push(rateText);
+        }
+        if (timeElement) {
+          const timeText = timeElement.textContent?.trim();
+          if (timeText) rates.push(timeText);
+        }
         return rates.length > 0 ? rates : null;
       });
 
@@ -188,7 +191,7 @@ export const rateModule = async (msg: Message): Promise<void> => {
       }
 
       const converterBlock = await page.$(
-        "div.relative.bg-gradient-to-l.from-blue-850.to-blue-700"
+        "div.relative.rounded-3xl.bg-white"
       );
       if (converterBlock) {
         const buf = await converterBlock.screenshot({ type: "png" });
@@ -265,13 +268,13 @@ export const rateModule = async (msg: Message): Promise<void> => {
       );
       await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
       await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
-      await page.waitForSelector('div[data-testid="conversion"]', { timeout: 10000 });
+      await page.waitForSelector('form[data-hs-cf-bound]', { timeout: 10000 });
       await page.waitForTimeout(1500);
 
       const convertedText = await page.evaluate(() => {
-        const element = document.querySelector("p.sc-c5062ab2-1.jKDFIr");
-        if (!element) return null;
-        return element.textContent?.trim() || null;
+        const input = document.querySelector('fieldset:last-of-type input[aria-label="Receiving amount"]') as HTMLInputElement | null;
+        if (!input) return null;
+        return input.value?.trim() || null;
       });
 
       await browser.close();
@@ -424,26 +427,29 @@ export const rateModule = async (msg: Message): Promise<void> => {
           await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
 
           await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
-          await page.waitForSelector('div[data-testid="conversion"]', {
+          await page.waitForSelector('form[data-hs-cf-bound]', {
             timeout: 10000,
           });
           await page.waitForTimeout(1500);
 
           const convertedText = await page.evaluate(() => {
-            const element = document.querySelector("p.sc-c5062ab2-1.jKDFIr");
-            if (!element) return null;
-            return element.textContent?.trim() || null;
+            const input = document.querySelector('fieldset:last-of-type input[aria-label="Receiving amount"]') as HTMLInputElement | null;
+            if (!input) return null;
+            return input.value?.trim() || null;
           });
 
           const ratesData = await page.evaluate(() => {
-            const element = document.querySelector("div.sc-98b4ec47-0.jnAVFH");
-            if (!element) return null;
-            const paragraphs = element.querySelectorAll("p");
+            const rateElement = document.querySelector('p.text-lg.font-semibold.text-xe-neutral-900');
+            const timeElement = rateElement?.nextElementSibling as HTMLElement | null;
             const rates: string[] = [];
-            paragraphs.forEach((p) => {
-              const t = p.textContent?.trim();
-              if (t) rates.push(t);
-            });
+            if (rateElement) {
+              const rateText = rateElement.textContent?.trim();
+              if (rateText) rates.push(rateText);
+            }
+            if (timeElement) {
+              const timeText = timeElement.textContent?.trim();
+              if (timeText) rates.push(timeText);
+            }
             return rates.length > 0 ? rates : null;
           });
 
@@ -497,7 +503,7 @@ export const rateModule = async (msg: Message): Promise<void> => {
             `<code>${displayExpr}</code> = <code>${formattedFinal}</code>`;
 
           const converterBlock = await page.$(
-            "div.relative.bg-gradient-to-l.from-blue-850.to-blue-700"
+            "div.relative.z-\\[3\\].rounded-3xl.bg-white"
           );
           if (converterBlock) {
             const buf = await converterBlock.screenshot({ type: "png" });
@@ -560,30 +566,32 @@ export const rateModule = async (msg: Message): Promise<void> => {
 
     await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
     // Ждем появления блока конвертера
-    await page.waitForSelector('div[data-testid="conversion"]', {
+    await page.waitForSelector('form[data-hs-cf-bound]', {
       timeout: 10000,
     });
     // Небольшая задержка, чтобы дорендерились виджеты
     await page.waitForTimeout(1500);
 
-    // Парсим сумму конвертации (включая span с faded-digits)
+    // Парсим сумму конвертации
     const convertedText = await page.evaluate(() => {
-      const element = document.querySelector("p.sc-c5062ab2-1.jKDFIr");
-      if (!element) return null;
-      // textContent автоматически включает текст из всех дочерних элементов, включая span
-      return element.textContent?.trim() || null;
+      const input = document.querySelector('fieldset:last-of-type input[aria-label="Receiving amount"]') as HTMLInputElement | null;
+      if (!input) return null;
+      return input.value?.trim() || null;
     });
 
     // Парсим курсы
     const ratesData = await page.evaluate(() => {
-      const element = document.querySelector("div.sc-98b4ec47-0.jnAVFH");
-      if (!element) return null;
-      const paragraphs = element.querySelectorAll("p");
+      const rateElement = document.querySelector('p.text-lg.font-semibold.text-xe-neutral-900');
+      const timeElement = rateElement?.nextElementSibling as HTMLElement | null;
       const rates: string[] = [];
-      paragraphs.forEach((p) => {
-        const text = p.textContent?.trim();
-        if (text) rates.push(text);
-      });
+      if (rateElement) {
+        const rateText = rateElement.textContent?.trim();
+        if (rateText) rates.push(rateText);
+      }
+      if (timeElement) {
+        const timeText = timeElement.textContent?.trim();
+        if (timeText) rates.push(timeText);
+      }
       return rates.length > 0 ? rates : null;
     });
 
@@ -659,7 +667,7 @@ export const rateModule = async (msg: Message): Promise<void> => {
 
     // Делаем скриншот
     const converterBlock = await page.$(
-      "div.relative.bg-gradient-to-l.from-blue-850.to-blue-700"
+      "div.relative.z-\\[3\\].rounded-3xl.bg-white"
     );
     if (converterBlock) {
       const buf = await converterBlock.screenshot({ type: "png" });

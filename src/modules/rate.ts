@@ -2,14 +2,6 @@ import { type Message } from "node-telegram-bot-api";
 import { bot } from "../index.js";
 import { launchPuppeteer } from "../utils/puppeteer.js";
 
-function formatNumber(n: number, fractionDigits = 6): string {
-  const d = Number(n.toFixed(fractionDigits));
-  return d.toLocaleString("ru-RU", {
-    maximumFractionDigits: fractionDigits,
-    minimumFractionDigits: fractionDigits,
-  });
-}
-
 // Определяем, является ли валюта фиатной
 function isFiatCurrency(code: string): boolean {
   const fiatCodes = [

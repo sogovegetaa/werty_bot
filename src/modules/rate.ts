@@ -2,37 +2,6 @@ import { type Message } from "node-telegram-bot-api";
 import { bot } from "../index.js";
 import { launchPuppeteer } from "../utils/puppeteer.js";
 
-// Определяем, является ли валюта фиатной
-function isFiatCurrency(code: string): boolean {
-  const fiatCodes = [
-    "USD",
-    "EUR",
-    "GBP",
-    "JPY",
-    "CAD",
-    "AUD",
-    "CHF",
-    "CNY",
-    "KZT",
-    "RUB",
-    "TRY",
-    "UAH",
-    "PLN",
-    "KRW",
-    "SGD",
-    "HKD",
-    "NZD",
-    "MXN",
-    "INR",
-    "BRL",
-    "ZAR",
-    "SEK",
-    "NOK",
-    "DKK",
-  ];
-  return fiatCodes.includes(code.toUpperCase());
-}
-
 export function parsePairAndAmount(
   text: string
 ): { base: string; quote: string; amount: number; divisor?: number } | null {

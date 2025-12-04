@@ -190,14 +190,23 @@ export const rateModule = async (msg: Message): Promise<void> => {
         message += `<code>${convertedForFormula} - (${convertedForFormula} * ${percentForFormula}/100) = ${formattedFinal}</code>`;
       }
 
-      // Скрываем последний параграф с текстом про mid-market rate перед скриншотом
+      // Скрываем последний параграф с текстом про mid-market rate и кнопки перед скриншотом
       await page.evaluate(() => {
         const section = document.querySelector('section.relative.w-full.bg-gradient-to-l.from-blue-850.to-blue-700');
         if (section) {
+          // Скрываем последний параграф с текстом про mid-market rate
           const lastP = section.querySelector('p:last-of-type');
           if (lastP && lastP.textContent?.includes('We use the mid-market rate')) {
             (lastP as HTMLElement).style.display = 'none';
           }
+          // Скрываем кнопки "Track exchange rates" и "Send money"
+          const buttons = section.querySelectorAll('button, a');
+          buttons.forEach((btn) => {
+            const text = btn.textContent?.trim() || '';
+            if (text.includes('Track exchange rates') || text.includes('Send money')) {
+              (btn as HTMLElement).style.display = 'none';
+            }
+          });
         }
       });
 
@@ -513,14 +522,23 @@ export const rateModule = async (msg: Message): Promise<void> => {
           caption += `\n\n<code>${lines.join("\n")}</code>\n\n` +
             `<code>${displayExpr}</code> = <code>${formattedFinal}</code>`;
 
-          // Скрываем последний параграф с текстом про mid-market rate перед скриншотом
+          // Скрываем последний параграф с текстом про mid-market rate и кнопки перед скриншотом
           await page.evaluate(() => {
             const section = document.querySelector('section.relative.w-full.bg-gradient-to-l.from-blue-850.to-blue-700');
             if (section) {
+              // Скрываем последний параграф с текстом про mid-market rate
               const lastP = section.querySelector('p:last-of-type');
               if (lastP && lastP.textContent?.includes('We use the mid-market rate')) {
                 (lastP as HTMLElement).style.display = 'none';
               }
+              // Скрываем кнопки "Track exchange rates" и "Send money"
+              const buttons = section.querySelectorAll('button, a');
+              buttons.forEach((btn) => {
+                const text = btn.textContent?.trim() || '';
+                if (text.includes('Track exchange rates') || text.includes('Send money')) {
+                  (btn as HTMLElement).style.display = 'none';
+                }
+              });
             }
           });
 
@@ -687,14 +705,23 @@ export const rateModule = async (msg: Message): Promise<void> => {
       message += `<code>${convertedForFormula} / ${divisorForFormula} = ${formattedFinal}</code>`;
     }
 
-    // Скрываем последний параграф с текстом про mid-market rate перед скриншотом
+    // Скрываем последний параграф с текстом про mid-market rate и кнопки перед скриншотом
     await page.evaluate(() => {
       const section = document.querySelector('section.relative.w-full.bg-gradient-to-l.from-blue-850.to-blue-700');
       if (section) {
+        // Скрываем последний параграф с текстом про mid-market rate
         const lastP = section.querySelector('p:last-of-type');
         if (lastP && lastP.textContent?.includes('We use the mid-market rate')) {
           (lastP as HTMLElement).style.display = 'none';
         }
+        // Скрываем кнопки "Track exchange rates" и "Send money"
+        const buttons = section.querySelectorAll('button, a');
+        buttons.forEach((btn) => {
+          const text = btn.textContent?.trim() || '';
+          if (text.includes('Track exchange rates') || text.includes('Send money')) {
+            (btn as HTMLElement).style.display = 'none';
+          }
+        });
       }
     });
 

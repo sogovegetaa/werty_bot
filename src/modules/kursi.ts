@@ -314,25 +314,63 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
     };
 
     const setFromAmount = async (val: number) => {
-      // Ищем поле ввода по метке "From" и вводим через клавиатуру
-      const [fromInput] = await page.$x(
-        "//span[normalize-space(.)='From']/ancestor::div[contains(@class,'relative')]//input[@placeholder='0.00']"
-      );
-      if (fromInput) {
-        console.log(`[kursi setFromAmount] Поле From найдено, ввод значения ${val}`);
-        // Фокус + выделение всего текста, затем стираем и печатаем значение
-        await (fromInput as any).focus();
-        await (fromInput as any).click({ clickCount: 3, delay: 20 });
-        await page.keyboard.press('Backspace');
-        await page.keyboard.type(String(val), { delay: 50 });
-        // Снимаем фокус табом, чтобы сработали обработчики (onBlur/debounce)
-        await page.keyboard.press('Tab');
-        console.log(`[kursi setFromAmount] Значение введено, ждем обновления...`);
-      } else {
-        console.log(`[kursi setFromAmount] ОШИБКА: Поле From не найдено`);
-      }
-      // Увеличиваем задержку для обновления поля To
-      await page.waitForTimeout(1000);
+      // Ищем поле ввода по метке "From" и устанавливаем значение
+      const result = await page.evaluate((amount) => {
+        const spans = Array.from(
+          document.querySelectorAll('span.text-gray-300.uppercase.text-sm.font-noto')
+        );
+        const fromSpan = spans.find((s) => (s.textContent || '').trim() === 'From');
+        if (!fromSpan) return { found: false, error: 'From span not found' };
+        
+        // Ищем родительский div.relative, который содержит input
+        const container = fromSpan.closest('div.relative');
+        if (!container) return { found: false, error: 'Container not found' };
+        
+        const input = container.querySelector('input[placeholder="0.00"]') as HTMLInputElement | null;
+        if (!input) return { found: false, error: 'Input not found' };
+        
+        // Для React controlled inputs используем нативный setter
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+        
+        // Фокус на input
+        input.focus();
+        input.click();
+        
+        // Устанавливаем значение через нативный setter (для React controlled inputs)
+        if (nativeInputValueSetter) {
+          nativeInputValueSetter.call(input, String(amount));
+        } else {
+          input.value = String(amount);
+        }
+        
+        // Триггерим события для React
+        const inputEvent = new Event('input', { bubbles: true, cancelable: true });
+        const changeEvent = new Event('change', { bubbles: true, cancelable: true });
+        
+        input.dispatchEvent(inputEvent);
+        input.dispatchEvent(changeEvent);
+        
+        // Также пробуем через InputEvent (более правильный способ для React)
+        const inputEvent2 = new InputEvent('input', {
+          bubbles: true,
+          cancelable: true,
+          inputType: 'insertText',
+          data: String(amount)
+        });
+        input.dispatchEvent(inputEvent2);
+        
+        // Снимаем фокус
+        input.blur();
+        const blurEvent = new Event('blur', { bubbles: true, cancelable: true });
+        input.dispatchEvent(blurEvent);
+        
+        return { found: true, value: input.value, setterUsed: !!nativeInputValueSetter };
+      }, val);
+      
+      console.log(`[kursi setFromAmount] Результат установки значения:`, result);
+      
+      // Дополнительная задержка для обновления UI и вычисления поля To
+      await page.waitForTimeout(2000);
     };
 
     // 1) Выбираем валюту "From" = base (пример: GEL)

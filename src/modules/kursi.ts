@@ -240,6 +240,8 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
 
   const url = `https://kursi.ge/en/`;
 
+  console.log(`[kursi] Начало обработки /ккурс: ${base} → ${quote}, сумма: ${amount}, делитель: ${divisor}`);
+
   let browser: any = null;
   try {
     browser = await launchPuppeteer();
@@ -250,10 +252,14 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
     );
 
+    console.log(`[kursi] Переход на страницу: ${url}`);
     await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
+    console.log(`[kursi] Страница загружена`);
 
     // Принять cookies, если баннер есть
+    console.log(`[kursi] Попытка принять cookies...`);
     await tryAcceptCookies(page);
+    console.log(`[kursi] Cookies обработаны`);
 
     // Вспомогательные функции для ПК-версии: открыть выпадающий список по метке и выбрать валюту
     const openDropdownByLabel = async (labelText: 'From' | 'To') => {
@@ -325,38 +331,62 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
     };
 
     // 1) Выбираем валюту "From" = base (пример: GEL)
+    console.log(`[kursi] Выбор валюты From: ${base}`);
     await openDropdownByLabel('From');
     await selectCurrencyFromMenu(base);
+    console.log(`[kursi] Валюта From выбрана: ${base}`);
 
     // 2) Выбираем валюту "To" = quote (пример: USD)
+    console.log(`[kursi] Выбор валюты To: ${quote}`);
     await openDropdownByLabel('To');
     await selectCurrencyFromMenu(quote);
+    console.log(`[kursi] Валюта To выбрана: ${quote}`);
     await new Promise(resolve => setTimeout(resolve, 1000));
     // 3) Устанавливаем сумму в поле "From" (пример: 100)
+    console.log(`[kursi] Установка суммы в поле From: ${amount}`);
     await setFromAmount(amount);
+    console.log(`[kursi] Сумма установлена`);
     // Ждем, пока поле "To" заполнится (значение > 0)
-    await page.waitForFunction(() => {
-      const spans = Array.from(
-        document.querySelectorAll('span.text-gray-300.uppercase.text-sm.font-noto')
-      );
-      const toSpan = spans.find((s) => (s.textContent || '').trim() === 'To');
-      const container = toSpan?.closest('div.relative');
-      const input = container?.querySelector('input[placeholder="0.00"]') as HTMLInputElement | null;
-      if (!input) return false;
-      const raw = (input.value || '').replace(/\s+/g, '').replace(',', '.');
-      const num = parseFloat(raw);
-      return !isNaN(num) && num > 0;
-    }, { timeout: 5000 }).catch(() => null);
+    console.log(`[kursi] Ожидание заполнения поля To...`);
+    try {
+      await page.waitForFunction(() => {
+        const spans = Array.from(
+          document.querySelectorAll('span.text-gray-300.uppercase.text-sm.font-noto')
+        );
+        const toSpan = spans.find((s) => (s.textContent || '').trim() === 'To');
+        const container = toSpan?.closest('div.relative');
+        const input = container?.querySelector('input[placeholder="0.00"]') as HTMLInputElement | null;
+        if (!input) {
+          console.log(`[kursi] waitForFunction: input не найден`);
+          return false;
+        }
+        const raw = (input.value || '').replace(/\s+/g, '').replace(',', '.');
+        const num = parseFloat(raw);
+        const isValid = !isNaN(num) && num > 0;
+        if (isValid) {
+          console.log(`[kursi] waitForFunction: найдено значение ${num}`);
+        }
+        return isValid;
+      }, { timeout: 10000 });
+      console.log(`[kursi] Поле To заполнено`);
+    } catch (e) {
+      console.error(`[kursi] ОШИБКА: Поле To не заполнилось за 10 секунд:`, e);
+    }
+    // Дополнительная задержка для гарантии, что значения отобразились
+    await page.waitForTimeout(500);
+    console.log(`[kursi] Дополнительная задержка завершена, готов к скриншоту`);
 
     // (убрано отправление второго сообщения — используем caption у фото)
 
     // Снимок карточки Convert без блока подсказок и кнопки Continue
     try {
       // Находим элемент карточки по заголовку "Convert"
+      console.log(`[kursi] Поиск карточки Convert...`);
       const [cardHandle] = await page.$x(
         "//p[normalize-space(.)='Convert']/ancestor::div[contains(@class,'bg-primary-900')][1]"
       );
       if (cardHandle) {
+        console.log(`[kursi] Карточка найдена, удаление лишних элементов...`);
         // Удаляем блок подсказок и кнопку Continue внутри карточки
         await (cardHandle as any).evaluate((el: Element) => {
           // Удалить контейнер с подсказками и кнопкой Continue (второй блок flex-col gap-6 с Continue)
@@ -371,9 +401,12 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
         });
 
         await page.waitForTimeout(100);
+        console.log(`[kursi] Делаем скриншот...`);
         const buf = await (cardHandle as any).screenshot({ type: 'png' });
+        console.log(`[kursi] Скриншот сделан, размер: ${buf.length} байт`);
 
         // Парсим значение поля To для подписи
+        console.log(`[kursi] Парсинг значения поля To...`);
         const toValue = await page.evaluate(() => {
           const spans = Array.from(
             document.querySelectorAll('span.text-gray-300.uppercase.text-sm.font-noto')
@@ -383,6 +416,7 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
           const input = container?.querySelector('input[placeholder="0.00"]') as HTMLInputElement | null;
           return input ? input.value : null;
         });
+        console.log(`[kursi] Значение поля To: ${toValue}`);
 
         // Формируем caption по шаблону ОДНИМ сообщением (включая расчёт с делителем)
         const formattedAmount = amount.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -399,12 +433,15 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
             cleaned = cleaned.replace(',', '.');
           }
           const num = parseFloat(cleaned);
+          console.log(`[kursi] Распарсенное число из toValue: ${num}`);
           if (!isNaN(num) && amount > 0) {
             const formattedToTight = num.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
             const rateB2Q = num / amount; // 1 base в quote
             const rateQ2B = rateB2Q > 0 ? 1 / rateB2Q : 0; // 1 quote в base
             const rateB2QStr = rateB2Q.toLocaleString('ru-RU', { minimumFractionDigits: 6, maximumFractionDigits: 8 });
             const rateQ2BStr = rateQ2B.toLocaleString('ru-RU', { minimumFractionDigits: 6, maximumFractionDigits: 8 });
+
+            console.log(`[kursi] Курсы: 1 ${base} = ${rateB2QStr} ${quote}, 1 ${quote} = ${rateQ2BStr} ${base}`);
 
             caption += `\n\n1 ${base} = ${rateB2QStr}${quote}`;
             caption += `\n1 ${quote} = ${rateQ2BStr} ${base}`;
@@ -427,12 +464,26 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
           }
         }
 
+        console.log(`[kursi] Отправка фото в чат...`);
         await bot.sendPhoto(chatId, buf as any, { caption, parse_mode: 'HTML' });
+        console.log(`[kursi] Фото отправлено в чат`);
+      } else {
+        console.log(`[kursi] ОШИБКА: Карточка Convert не найдена`);
       }
-    } catch {}
+    } catch (e) {
+      console.error(`[kursi] ОШИБКА при создании скриншота:`, e);
+      if (e instanceof Error) {
+        console.error(`[kursi] Сообщение об ошибке: ${e.message}`);
+        console.error(`[kursi] Stack: ${e.stack}`);
+      }
+    }
 
   } catch (e) {
-    console.error("/ккурс error:", e);
+    console.error(`[kursi] ОШИБКА:`, e);
+    if (e instanceof Error) {
+      console.error(`[kursi] Сообщение об ошибке: ${e.message}`);
+      console.error(`[kursi] Stack: ${e.stack}`);
+    }
   } finally {
     // Гарантируем закрытие браузера в любом случае
     if (browser) {

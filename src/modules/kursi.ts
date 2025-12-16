@@ -455,7 +455,32 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
       });
       console.log(`[kursi] Отладочная информация поля To:`, debugValue);
     }
-
+    // Закрываем модальное окно "Exchange currency and win!", если оно открыто
+    console.log(`[kursi] Попытка закрыть модальное окно...`);
+    try {
+      await page.waitForTimeout(1000); // Ждем появления модального окна
+      const closeModal = await page.evaluate(() => {
+        // Ищем кнопку "Dont show again" в модальном окне
+        const buttons = Array.from(document.querySelectorAll('button')) as HTMLButtonElement[];
+        const dontShowButton = buttons.find((btn) => 
+          btn.textContent?.trim().toLowerCase().includes('dont show again') ||
+          btn.textContent?.trim().toLowerCase().includes("don't show again")
+        );
+        if (dontShowButton) {
+          dontShowButton.click();
+          return true;
+        }
+        return false;
+      });
+      if (closeModal) {
+        console.log(`[kursi] Модальное окно закрыто`);
+        await page.waitForTimeout(500);
+      } else {
+        console.log(`[kursi] Модальное окно не найдено или уже закрыто`);
+      }
+    } catch (e) {
+      console.log(`[kursi] Ошибка при закрытии модального окна (игнорируем):`, e);
+    }
     // (убрано отправление второго сообщения — используем caption у фото)
 
     // Снимок карточки Convert без блока подсказок и кнопки Continue

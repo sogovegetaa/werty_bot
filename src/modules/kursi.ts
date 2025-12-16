@@ -319,6 +319,7 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
         "//span[normalize-space(.)='From']/ancestor::div[contains(@class,'relative')]//input[@placeholder='0.00']"
       );
       if (fromInput) {
+        console.log(`[kursi setFromAmount] Поле From найдено, ввод значения ${val}`);
         // Фокус + выделение всего текста, затем стираем и печатаем значение
         await (fromInput as any).focus();
         await (fromInput as any).click({ clickCount: 3, delay: 20 });
@@ -326,8 +327,12 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
         await page.keyboard.type(String(val), { delay: 50 });
         // Снимаем фокус табом, чтобы сработали обработчики (onBlur/debounce)
         await page.keyboard.press('Tab');
+        console.log(`[kursi setFromAmount] Значение введено, ждем обновления...`);
+      } else {
+        console.log(`[kursi setFromAmount] ОШИБКА: Поле From не найдено`);
       }
-      await page.waitForTimeout(300);
+      // Увеличиваем задержку для обновления поля To
+      await page.waitForTimeout(1000);
     };
 
     // 1) Выбираем валюту "From" = base (пример: GEL)
@@ -345,9 +350,41 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
     // 3) Устанавливаем сумму в поле "From" (пример: 100)
     console.log(`[kursi] Установка суммы в поле From: ${amount}`);
     await setFromAmount(amount);
+    
+    // Проверяем, что значение действительно установлено
+    const fromValueCheck = await page.evaluate(() => {
+      const spans = Array.from(
+        document.querySelectorAll('span.text-gray-300.uppercase.text-sm.font-noto')
+      );
+      const fromSpan = spans.find((s) => (s.textContent || '').trim() === 'From');
+      const container = fromSpan?.closest('div.relative');
+      const input = container?.querySelector('input[placeholder="0.00"]') as HTMLInputElement | null;
+      return {
+        found: !!input,
+        value: input?.value || null
+      };
+    });
+    console.log(`[kursi] Проверка значения поля From после ввода:`, fromValueCheck);
+    
     console.log(`[kursi] Сумма установлена`);
     // Ждем, пока поле "To" заполнится (значение > 0)
     console.log(`[kursi] Ожидание заполнения поля To...`);
+    
+    // Сначала проверяем, что поле существует
+    const toFieldExists = await page.evaluate(() => {
+      const spans = Array.from(
+        document.querySelectorAll('span.text-gray-300.uppercase.text-sm.font-noto')
+      );
+      const toSpan = spans.find((s) => (s.textContent || '').trim() === 'To');
+      const container = toSpan?.closest('div.relative');
+      const input = container?.querySelector('input[placeholder="0.00"]') as HTMLInputElement | null;
+      return {
+        found: !!input,
+        value: input?.value || null
+      };
+    });
+    console.log(`[kursi] Проверка поля To до ожидания:`, toFieldExists);
+    
     try {
       await page.waitForFunction(() => {
         const spans = Array.from(
@@ -356,25 +393,30 @@ export const kursiRateModule = async (msg: Message): Promise<void> => {
         const toSpan = spans.find((s) => (s.textContent || '').trim() === 'To');
         const container = toSpan?.closest('div.relative');
         const input = container?.querySelector('input[placeholder="0.00"]') as HTMLInputElement | null;
-        if (!input) {
-          console.log(`[kursi] waitForFunction: input не найден`);
-          return false;
-        }
+        if (!input) return false;
         const raw = (input.value || '').replace(/\s+/g, '').replace(',', '.');
         const num = parseFloat(raw);
-        const isValid = !isNaN(num) && num > 0;
-        if (isValid) {
-          console.log(`[kursi] waitForFunction: найдено значение ${num}`);
-        }
-        return isValid;
-      }, { timeout: 10000 });
+        return !isNaN(num) && num > 0;
+      }, { timeout: 15000, polling: 500 });
       console.log(`[kursi] Поле To заполнено`);
     } catch (e) {
-      console.error(`[kursi] ОШИБКА: Поле To не заполнилось за 10 секунд:`, e);
+      console.error(`[kursi] ОШИБКА: Поле To не заполнилось за 15 секунд:`, e);
+      // Проверяем текущее значение для отладки
+      const debugValue = await page.evaluate(() => {
+        const spans = Array.from(
+          document.querySelectorAll('span.text-gray-300.uppercase.text-sm.font-noto')
+        );
+        const toSpan = spans.find((s) => (s.textContent || '').trim() === 'To');
+        const container = toSpan?.closest('div.relative');
+        const input = container?.querySelector('input[placeholder="0.00"]') as HTMLInputElement | null;
+        return {
+          found: !!input,
+          value: input?.value || null,
+          placeholder: input?.placeholder || null
+        };
+      });
+      console.log(`[kursi] Отладочная информация поля To:`, debugValue);
     }
-    // Дополнительная задержка для гарантии, что значения отобразились
-    await page.waitForTimeout(500);
-    console.log(`[kursi] Дополнительная задержка завершена, готов к скриншоту`);
 
     // (убрано отправление второго сообщения — используем caption у фото)
 

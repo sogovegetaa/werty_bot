@@ -43,7 +43,6 @@ export async function launchPuppeteer() {
                     rmSync(userDataDir, { recursive: true, force: true });
                 }
                 catch {
-                    // Игнорируем ошибки очистки
                 }
             }
         };
@@ -54,7 +53,6 @@ export async function launchPuppeteer() {
             rmSync(userDataDir, { recursive: true, force: true });
         }
         catch {
-            // Игнорируем ошибки очистки
         }
         throw error;
     }

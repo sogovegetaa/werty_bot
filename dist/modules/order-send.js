@@ -7,7 +7,6 @@ export const orderSendModule = async (msg) => {
     const telegramId = msg.from.id;
     const text = msg.text?.trim() || "";
     try {
-        // 2️⃣ Находим пользователя
         const { data: user, error: userError } = await supabase
             .from("user")
             .select("id")
@@ -21,14 +20,10 @@ export const orderSendModule = async (msg) => {
             await bot.sendMessage(chatId, "❌ Сначала зарегистрируйся через /start.");
             return;
         }
-        // Проверяем, не является ли это запросом на конвертацию валюты
-        // Формат: /отпр eurusd 10000/1,015 или /отпр <id> eurusd 10000/1,015
-        // Сначала пробуем формат с id
         const idFirstMatch = text.match(/^\/отпр\s+(#?\d+)\s+(.+)$/i);
         let orderId = null;
         let currencyText = null;
         if (idFirstMatch) {
-            // Формат с id: /отпр <id> <остальное>
             orderId = Number(idFirstMatch[1].replace("#", ""));
             const restAfterId = idFirstMatch[2];
             const testCurrencyText = `/курс ${restAfterId}`;
@@ -38,11 +33,9 @@ export const orderSendModule = async (msg) => {
             }
         }
         else {
-            // Формат без id: /отпр <остальное>
             const restMatch = text.match(/^\/отпр\s+(.+)$/i);
             if (restMatch) {
                 const rest = restMatch[1];
-                // Проверяем, не начинается ли с числа (тогда это старая логика)
                 if (!rest.match(/^\d/)) {
                     const testCurrencyText = `/курс ${rest}`;
                     const parsedTest = parsePairAndAmount(testCurrencyText);
@@ -63,11 +56,11 @@ export const orderSendModule = async (msg) => {
                     await page.setUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1");
                     await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2 });
                     await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
-                    await page.waitForSelector('div[data-testid="conversion"]', { timeout: 10000 });
+                    await page.waitForSelector('form[data-hs-cf-bound]', { timeout: 10000 });
                     await page.waitForTimeout(1500);
                     const convertedText = await page.evaluate(() => {
-                        const element = document.querySelector("p.sc-c5062ab2-1.jKDFIr");
-                        return element?.textContent?.trim() || null;
+                        const input = document.querySelector('fieldset:last-of-type input[aria-label="Receiving amount"]');
+                        return input?.value?.trim() || null;
                     });
                     await browser.close();
                     if (convertedText) {
@@ -80,7 +73,6 @@ export const orderSendModule = async (msg) => {
                             if (divisor && divisor > 0) {
                                 convertedValueNum = convertedValueBeforeDivisor / divisor;
                             }
-                            // Теперь используем эту сумму для отправки
                             let order = null;
                             if (orderId) {
                                 const { data: byId } = await supabase
@@ -104,7 +96,6 @@ export const orderSendModule = async (msg) => {
                                     order = byReply;
                             }
                             else {
-                                // Берем последнюю открытую заявку пользователя в этом чате
                                 const { data: lastOrder } = await supabase
                                     .from("order")
                                     .select("*")
@@ -122,11 +113,9 @@ export const orderSendModule = async (msg) => {
                                 return;
                             }
                             const amount = convertedValueNum;
-                            // Пересчитываем суммы
                             const sent_usdt = Number(order.sent_usdt || 0) + amount;
                             const remaining_usdt = Math.max(Number(order.usdt_amount || 0) - sent_usdt, 0);
                             const newStatus = remaining_usdt <= 0 ? "done" : "partial";
-                            // Обновляем заявку
                             const { error: updateError } = await supabase
                                 .from("order")
                                 .update({
@@ -139,7 +128,6 @@ export const orderSendModule = async (msg) => {
                                 .eq("chat_id", chatId);
                             if (updateError)
                                 throw updateError;
-                            // Готовим сообщение
                             const getStr = Number(order.rub_get || 0).toLocaleString("ru-RU");
                             const sentStr = Number(sent_usdt).toLocaleString("ru-RU", {
                                 minimumFractionDigits: 2,
@@ -171,12 +159,8 @@ export const orderSendModule = async (msg) => {
                 }
             }
         }
-        // 1️⃣ Парсинг форматов (стандартная логика):
-        //   a) reply на карточку заявки: /отпр <сумма>
-        //   b) явный id: /отпр <id> <сумма>  (id допускает вид #23)
         const replyMatch = text.match(/^\/отпр\s+([\d\s.,]+)/i);
         const idMatch = text.match(/^\/отпр\s+(#?\d+)\s+([\d\s.,]+)/i);
-        // 3️⃣ Определяем заявку и сумму: ТОЛЬКО reply или явный id
         let order = null;
         let amount = null;
         if (msg.reply_to_message && replyMatch) {
@@ -215,12 +199,9 @@ export const orderSendModule = async (msg) => {
             await bot.sendMessage(chatId, "❌ Неверная сумма.");
             return;
         }
-        // 4️⃣ Пересчитываем суммы
         const sent_usdt = Number(order.sent_usdt || 0) + amount;
         const remaining_usdt = Math.max(Number(order.usdt_amount || 0) - sent_usdt, 0);
-        // Определяем новый статус
         const newStatus = remaining_usdt <= 0 ? "done" : "partial";
-        // 5️⃣ Обновляем заявку
         const { error: updateError } = await supabase
             .from("order")
             .update({
@@ -233,7 +214,6 @@ export const orderSendModule = async (msg) => {
             .eq("chat_id", chatId);
         if (updateError)
             throw updateError;
-        // 6️⃣ Готовим сообщение
         let messageText = `💰 Отправлено: <code>${amount.toLocaleString("ru-RU")}</code> USDT\n\n` +
             `Заявка: <b>${order.id}</b>\n` +
             `Всего по заявке: <code>${order.usdt_amount.toLocaleString("ru-RU")}</code> USDT\n` +

@@ -3,7 +3,7 @@ import { supabase } from "../api.js";
 export const walletAddModule = async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text?.trim() || "";
-    const match = text.match(/^\/добавь\s+([\p{L}]{2,8})(?:\s+(\d))?$/iu);
+    const match = text.match(/^\/добавь\s+([\p{L}]{2,16})(?:\s+(\d))?$/iu);
     if (!match) {
         await bot.sendMessage(chatId, "⚙️ Формат: /добавь <код_счёта> [точность 0-8]\nПример: /добавь usd 2");
         return;
@@ -23,15 +23,12 @@ export const walletAddModule = async (msg) => {
         const { data: existing } = await supabase
             .from("wallet")
             .select("id, precision")
-            .eq("user_id", user.id)
+            .eq("chat_id", chatId)
             .eq("code", code)
-            .single();
+            .maybeSingle();
         if (existing) {
             if (match[2]) {
-                await supabase
-                    .from("wallet")
-                    .update({ precision })
-                    .eq("id", existing.id);
+                await supabase.from("wallet").update({ precision }).eq("id", existing.id);
                 await bot.sendMessage(chatId, `Точность обновлена. Теперь <code>${precision}</code> разр. после запятой.`, { parse_mode: "HTML" });
             }
             else {
@@ -41,9 +38,22 @@ export const walletAddModule = async (msg) => {
         }
         const { error } = await supabase
             .from("wallet")
-            .insert({ user_id: user.id, code, precision, balance: 0 });
-        if (error)
+            .insert({ user_id: user.id, chat_id: chatId, code, precision, balance: 0 });
+        if (error) {
+            if (error.code === '23505') {
+                const { data: checkExisting } = await supabase
+                    .from("wallet")
+                    .select("id, precision")
+                    .eq("chat_id", chatId)
+                    .eq("code", code)
+                    .maybeSingle();
+                if (checkExisting) {
+                    await bot.sendMessage(chatId, `Счёт уже есть. Точность: <code>${checkExisting.precision}</code>.`, { parse_mode: "HTML" });
+                    return;
+                }
+            }
             throw error;
+        }
         await bot.sendMessage(chatId, `Счёт добавлен. Установлена точность <code>${precision}</code> разряда${precision === 1 ? "" : ""} после запятой.`, { parse_mode: "HTML" });
     }
     catch (e) {

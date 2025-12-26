@@ -14,7 +14,6 @@ function formatDate(d) {
 export const ordersListModule = async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text?.trim() || "";
-    // Поддерживаем фильтры: "/заявки", "/заявки мои", "/заявки все"
     const arg = text.split(/\s+/)[1]?.toLowerCase();
     try {
         const { data: currentUser } = await supabase
@@ -37,10 +36,8 @@ export const ordersListModule = async (msg) => {
                 await bot.sendMessage(chatId, "⛔ Команда доступна только администраторам.");
                 return;
             }
-            // все заявки любых статусов в этом чате (ограничим 20)
         }
         else {
-            // по умолчанию: только заявки текущего пользователя в этом чате и только открытые
             query = query
                 .eq("user_id", currentUser.id)
                 .in("status", ["created", "partial"]);

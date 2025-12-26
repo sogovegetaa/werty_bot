@@ -39,9 +39,7 @@ bot.on("message", async (msg) => {
         await handler(msg);
         return;
     }
-    // Калькулятор: команды вида "/<выражение>" (начинается с цифры или скобки)
     if (/^\/[0-9(]/.test(command)) {
-        // используем существующий calcModule, он поддерживает прямой формат
         const { calcModule } = await import("./modules/calc.js");
         await calcModule(msg);
         return;

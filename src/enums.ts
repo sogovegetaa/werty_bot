@@ -11,5 +11,5 @@ export enum BotCommands {
     ADD_ACCOUNT = "/добавь",
     DELETE_ACCOUNT = "/удали",
     RATE = "/курс",
-    KURSI_RATE = "/ккурс",
+    KURSI_RATE = "/ккурс"
 }

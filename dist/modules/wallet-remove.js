@@ -3,7 +3,7 @@ import { supabase } from "../api.js";
 export const walletRemoveModule = async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text?.trim() || "";
-    const match = text.match(/^\/удали\s+([\p{L}]{2,8})$/iu);
+    const match = text.match(/^\/удали\s+([\p{L}]{2,16})$/iu);
     if (!match) {
         await bot.sendMessage(chatId, "⚙️ Формат: /удали <код_счёта>\nПример: /удали usd");
         return;
@@ -22,17 +22,30 @@ export const walletRemoveModule = async (msg) => {
         const { data: acc } = await supabase
             .from("wallet")
             .select("id, balance, precision")
-            .eq("user_id", user.id)
+            .eq("chat_id", chatId)
             .eq("code", code)
             .single();
         if (!acc) {
             await bot.sendMessage(chatId, `❌ Счёт ${code} не найден.`);
             return;
         }
-        if (Number(acc.balance || 0) !== 0) {
-            await bot.sendMessage(chatId, `❌ Нельзя удалить счёт с ненулевым балансом. Текущий баланс: <code>${Number(acc.balance || 0).toFixed(acc.precision || 2)}</code> ${code}`, { parse_mode: "HTML" });
+        const { data: transactions } = await supabase
+            .from("wallet_tx")
+            .select("amount")
+            .eq("code", code)
+            .eq("chat_id", chatId);
+        const totalBalance = (transactions || []).reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+        if (totalBalance !== 0) {
+            await bot.sendMessage(chatId, `❌ Нельзя удалить счёт с ненулевым балансом. Текущий баланс: <code>${Number(totalBalance).toFixed(acc.precision || 2)}</code> ${code}`, { parse_mode: "HTML" });
             return;
         }
+        const { error: txError } = await supabase
+            .from("wallet_tx")
+            .delete()
+            .eq("code", code)
+            .eq("chat_id", chatId);
+        if (txError)
+            throw txError;
         const { error } = await supabase.from("wallet").delete().eq("id", acc.id);
         if (error)
             throw error;

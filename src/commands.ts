@@ -13,23 +13,19 @@ import { walletRemoveModule } from "./modules/wallet-remove.js";
 import { rateModule } from "./modules/rate.js";
 import { ordersListModule } from "./modules/orders-list.js";
 import { kursiRateModule } from "./modules/kursi.js";
-
-export const commandHandlers: Record<
-  string,
-  (msg: Message) => void | Promise<void>
-> = {
-  [BotCommands.START]: startModule, // команда /start
-  [BotCommands.PR]: createOrderModule, // команда /пр
-  [BotCommands.GIVE]: balanceShowModule, // команда /дай
-  [BotCommands.SEND]: orderSendModule, // команда /отпр
-  [BotCommands.CHANGE]: updateOrderModule, // команда /изм  
-  [BotCommands.CALC]: calcModule, // команда /калк
-  [BotCommands.ADD_ACCOUNT]: walletAddModule, // команда /добавь
-  [BotCommands.DELETE_ACCOUNT]: walletRemoveModule, // команда /удали
-  [BotCommands.RATE]: rateModule, // команда /курс
-  [BotCommands.KURSI_RATE]: kursiRateModule, // команда /ккурс
-  [BotCommands.ORDERS]: ordersListModule, // команда /заявки
-  [BotCommands.HELP]: async (m: Message) => {
-    await bot.sendMessage(m.chat.id, helpDoc, { parse_mode: "HTML", disable_web_page_preview: true }); // команда /help
-  },
+export const commandHandlers: Record<string, (msg: Message) => void | Promise<void>> = {
+    [BotCommands.START]: startModule,
+    [BotCommands.PR]: createOrderModule,
+    [BotCommands.GIVE]: balanceShowModule,
+    [BotCommands.SEND]: orderSendModule,
+    [BotCommands.CHANGE]: updateOrderModule,
+    [BotCommands.CALC]: calcModule,
+    [BotCommands.ADD_ACCOUNT]: walletAddModule,
+    [BotCommands.DELETE_ACCOUNT]: walletRemoveModule,
+    [BotCommands.RATE]: rateModule,
+    [BotCommands.KURSI_RATE]: kursiRateModule,
+    [BotCommands.ORDERS]: ordersListModule,
+    [BotCommands.HELP]: async (m: Message) => {
+        await bot.sendMessage(m.chat.id, helpDoc, { parse_mode: "HTML", disable_web_page_preview: true });
+    },
 };

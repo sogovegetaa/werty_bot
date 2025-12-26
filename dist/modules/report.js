@@ -18,17 +18,15 @@ export const sendReportXls = async (msg, overrideUser, codeFilter) => {
         let txQuery = supabase
             .from("wallet_tx")
             .select("created_at, code, amount, balance_after, chat_title, username")
-            .eq("user_id", user.id)
             .eq("chat_id", chatId)
             .order("created_at", { ascending: true });
         if (codeFilter)
             txQuery = txQuery.eq("code", codeFilter);
         const { data: txs } = await txQuery;
-        // Список актуальных счетов пользователя — чтобы пометить удалённые
         const { data: accountsNow } = await supabase
             .from("wallet")
             .select("code")
-            .eq("user_id", user.id);
+            .eq("chat_id", chatId);
         const aliveCodes = new Set((accountsNow || []).map((a) => a.code));
         const wb = new ExcelJS.Workbook();
         const ws = wb.addWorksheet("Полная выписка");
@@ -63,7 +61,6 @@ export const sendReportXls = async (msg, overrideUser, codeFilter) => {
                 balance: t.balance_after,
             });
         }
-        // Стиль чисел
         ws.getColumn("amount").numFmt = "#,##0.00;[Red]-#,##0.00";
         ws.getColumn("balance").numFmt = "#,##0.00";
         const buf = await wb.xlsx.writeBuffer();
@@ -71,7 +68,6 @@ export const sendReportXls = async (msg, overrideUser, codeFilter) => {
         const fileName = `Полная_выписка${suffix}_${new Date()
             .toISOString()
             .slice(0, 10)}.xlsx`;
-        // Передаем как Buffer + fileOptions (корректный multipart/form-data)
         const buffer = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
         await bot.sendDocument(chatId, buffer, {}, {
             filename: fileName,

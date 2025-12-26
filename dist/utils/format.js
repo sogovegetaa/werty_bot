@@ -14,16 +14,13 @@ export function parseFlexibleNumber(input) {
     return Number.isNaN(num) ? null : num;
 }
 export function evaluateMathExpression(raw) {
-    // Нормализация: убираем пробелы и апострофы, запятую -> точка
     const normalized = raw
         .replace(/[’']/g, "")
         .replace(/,/g, ".");
-    // Оставляем только допустимые символы выражения
     const safe = normalized.replace(/[^0-9+\-*/().\s]/g, "");
     if (!safe.trim())
         return null;
     try {
-        // eslint-disable-next-line no-new-func
         const result = Function(`"use strict"; return (${safe})`)();
         if (typeof result !== "number" || Number.isNaN(result) || !Number.isFinite(result)) {
             return null;

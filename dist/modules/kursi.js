@@ -1,6 +1,5 @@
 import { launchPuppeteer } from "../utils/puppeteer.js";
 import { bot } from "../index.js";
-// Разрешённые валюты на kursi.ge
 const ALLOWED = new Set(["EUR", "GEL", "USD", "RUB"]);
 function parseKursiArgs(text) {
     const m = text.match(/^\/ккурс\s+([^\s]+)(?:\s+([\d.,]+))?(?:\/([\d.,]+))?$/i);
@@ -26,7 +25,6 @@ function parseKursiArgs(text) {
 }
 async function tryAcceptCookies(page) {
     try {
-        // Небольшая пауза, чтобы баннер успел смонтироваться
         await page.waitForTimeout(500);
         const btn = await page.$("#CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll");
         if (btn) {
@@ -34,7 +32,6 @@ async function tryAcceptCookies(page) {
             await btn.click({ delay: 20 });
             await page.waitForTimeout(300);
         }
-        // Фолбэк: кликаем через evaluate, если элемент перекрыт
         await page.evaluate(() => {
             const el = document.getElementById("CybotCookiebotDialogBodyLevelButtonLevelOptinAllowAll");
             if (el)
@@ -43,13 +40,109 @@ async function tryAcceptCookies(page) {
         await page.waitForTimeout(200);
     }
     catch {
-        // Игнорируем — если баннера нет
     }
 }
 export const kursiRateModule = async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text?.trim() || "";
-    const parsed = parseKursiArgs(text);
+    let calcInfo = null;
+    const calcMatch = text.match(/^\/ккурс\s+(.+)$/i);
+    if (calcMatch && !parseKursiArgs(text)) {
+        const exprPart = calcMatch[1].replace(/,/g, ".").replace(/[–—−]/g, "-");
+        const complexRegex = /([a-z]{3,10})\s*\(([^()]+)\)/gi;
+        const simpleRegex = /([a-z]{3,10})\s+(\d+(?:\.\d+)?(?:[+\-*/]\d+(?:\.\d+)?)+)/gi;
+        const complexMatches = [...exprPart.matchAll(complexRegex)];
+        const simpleMatches = [...exprPart.matchAll(simpleRegex)];
+        const segments = [];
+        let placeholderIndex = 0;
+        for (const m of complexMatches) {
+            const full = m[0];
+            const pairRaw = m[1];
+            const innerExpr = m[2];
+            const innerNorm = innerExpr.replace(/,/g, ".").replace(/[–—−]/g, "-");
+            const innerSafe = innerNorm.replace(/[^0-9+\-*/().\s]/g, "");
+            const amount = Function(`"use strict"; return (${innerSafe})`)();
+            if (isNaN(amount)) {
+                await bot.sendMessage(chatId, "❌ Не удалось вычислить выражение для суммы конвертации.");
+                return;
+            }
+            const parsed = parseKursiArgs(`/ккурс ${pairRaw} ${amount}`);
+            if (!parsed) {
+                await bot.sendMessage(chatId, `❌ Неверная или запрещённая валютная пара: ${pairRaw}.`);
+                return;
+            }
+            const { base, quote } = parsed;
+            segments.push({
+                full,
+                placeholder: `__K${placeholderIndex++}__`,
+                base,
+                quote,
+                amount,
+                converted: amount,
+            });
+        }
+        for (const m of simpleMatches) {
+            const full = m[0];
+            const pairRaw = m[1];
+            const expr = m[2];
+            if (segments.some((s) => s.full === full))
+                continue;
+            const exprNorm = expr.replace(/,/g, ".").replace(/[–—−]/g, "-");
+            const exprSafe = exprNorm.replace(/[^0-9+\-*/().\s]/g, "");
+            const amount = Function(`"use strict"; return (${exprSafe})`)();
+            if (isNaN(amount)) {
+                await bot.sendMessage(chatId, "❌ Не удалось вычислить выражение для суммы конвертации.");
+                return;
+            }
+            const parsed = parseKursiArgs(`/ккурс ${pairRaw} ${amount}`);
+            if (!parsed) {
+                await bot.sendMessage(chatId, `❌ Неверная или запрещённая валютная пара: ${pairRaw}.`);
+                return;
+            }
+            const { base, quote } = parsed;
+            segments.push({
+                full,
+                placeholder: `__K${placeholderIndex++}__`,
+                base,
+                quote,
+                amount,
+                converted: amount,
+            });
+        }
+        if (segments.length > 0) {
+            const baseSet = new Set(segments.map((s) => s.base));
+            const quoteSet = new Set(segments.map((s) => s.quote));
+            if (baseSet.size !== 1 || quoteSet.size !== 1) {
+                await bot.sendMessage(chatId, "❌ Для /ккурс в одном выражении должна использоваться одна и та же валютная пара.");
+                return;
+            }
+            const totalAmount = segments.reduce((sum, s) => sum + s.amount, 0);
+            let exprForCalc = exprPart;
+            for (const seg of segments) {
+                exprForCalc = exprForCalc.replace(seg.full, seg.amount.toString());
+            }
+            const safeFinal = exprForCalc.replace(/[^0-9+\-*/().\s]/g, "");
+            const finalAmount = Function(`"use strict"; return (${safeFinal})`)();
+            if (isNaN(finalAmount)) {
+                await bot.sendMessage(chatId, "❌ Не удалось вычислить выражение.");
+                return;
+            }
+            const base = [...baseSet][0];
+            const quote = [...quoteSet][0];
+            const syntheticText = `/ккурс ${base.toLowerCase()}${quote.toLowerCase()} ${totalAmount}`;
+            msg.text = syntheticText;
+            const formattedLines = segments.map((s) => {
+                const a = Number(s.amount.toFixed(6)).toLocaleString("ru-RU");
+                return `${a} ${s.base} → ${s.quote}`;
+            });
+            calcInfo = {
+                lines: formattedLines,
+                exprDisplay: exprForCalc.replace(/\s+/g, ""),
+                finalFormatted: Number(finalAmount.toFixed(6)).toLocaleString("ru-RU"),
+            };
+        }
+    }
+    const parsed = parseKursiArgs(msg.text ?? text);
     if (!parsed) {
         await bot.sendMessage(chatId, "⚙️ Формат: /ккурс <пара> [сумма][/делитель]\nПримеры: /ккурс gelusd 100, /ккурс gelusd 10000/1,015\nДопустимые валюты: EUR, GEL, USD, RUB");
         return;
@@ -61,12 +154,9 @@ export const kursiRateModule = async (msg) => {
         browser = await launchPuppeteer();
         const page = await browser.newPage();
         await page.setViewport({ width: 1920, height: 1080, deviceScaleFactor: 2 });
-        // Desktop user-agent для ПК-версии сайта
         await page.setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36");
         await page.goto(url, { waitUntil: "networkidle2", timeout: 60000 });
-        // Принять cookies, если баннер есть
         await tryAcceptCookies(page);
-        // Вспомогательные функции для ПК-версии: открыть выпадающий список по метке и выбрать валюту
         const openDropdownByLabel = async (labelText) => {
             const opened = await page.evaluate((label) => {
                 const spans = Array.from(document.querySelectorAll('span.text-gray-300.uppercase.text-sm.font-noto'));
@@ -84,7 +174,6 @@ export const kursiRateModule = async (msg) => {
                 return false;
             }, labelText);
             if (!opened) {
-                // Резерв: XPath по тексту метки
                 const [spanNode] = await page.$x(`//span[normalize-space(.)='${labelText}']`);
                 if (spanNode) {
                     const rel = await spanNode.evaluateHandle((el) => el.closest('div[contains(@class,"relative")]'));
@@ -108,7 +197,6 @@ export const kursiRateModule = async (msg) => {
                 return false;
             }, code);
             if (!selected) {
-                // Резервный XPath
                 const [node] = await page.$x(`//button[@role='menuitem'][contains(., '${code}')]`);
                 if (node)
                     await node.click({ delay: 20 });
@@ -116,49 +204,119 @@ export const kursiRateModule = async (msg) => {
             await page.waitForTimeout(200);
         };
         const setFromAmount = async (val) => {
-            // Ищем поле ввода по метке "From" и вводим через клавиатуру
-            const [fromInput] = await page.$x("//span[normalize-space(.)='From']/ancestor::div[contains(@class,'relative')]//input[@placeholder='0.00']");
-            if (fromInput) {
-                // Фокус + выделение всего текста, затем стираем и печатаем значение
-                await fromInput.focus();
-                await fromInput.click({ clickCount: 3, delay: 20 });
-                await page.keyboard.press('Backspace');
-                await page.keyboard.type(String(val), { delay: 50 });
-                // Снимаем фокус табом, чтобы сработали обработчики (onBlur/debounce)
-                await page.keyboard.press('Tab');
-            }
-            await page.waitForTimeout(300);
+            const result = await page.evaluate((amount) => {
+                const spans = Array.from(document.querySelectorAll('span.text-gray-300.uppercase.text-sm.font-noto'));
+                const fromSpan = spans.find((s) => (s.textContent || '').trim() === 'From');
+                if (!fromSpan)
+                    return { found: false, error: 'From span not found' };
+                const container = fromSpan.closest('div.relative');
+                if (!container)
+                    return { found: false, error: 'Container not found' };
+                const input = container.querySelector('input[placeholder="0.00"]');
+                if (!input)
+                    return { found: false, error: 'Input not found' };
+                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+                input.focus();
+                input.click();
+                if (nativeInputValueSetter) {
+                    nativeInputValueSetter.call(input, String(amount));
+                }
+                else {
+                    input.value = String(amount);
+                }
+                const inputEvent = new Event('input', { bubbles: true, cancelable: true });
+                const changeEvent = new Event('change', { bubbles: true, cancelable: true });
+                input.dispatchEvent(inputEvent);
+                input.dispatchEvent(changeEvent);
+                const inputEvent2 = new InputEvent('input', {
+                    bubbles: true,
+                    cancelable: true,
+                    inputType: 'insertText',
+                    data: String(amount)
+                });
+                input.dispatchEvent(inputEvent2);
+                input.blur();
+                const blurEvent = new Event('blur', { bubbles: true, cancelable: true });
+                input.dispatchEvent(blurEvent);
+                return { found: true, value: input.value, setterUsed: !!nativeInputValueSetter };
+            }, val);
+            await page.waitForTimeout(2000);
         };
-        // 1) Выбираем валюту "From" = base (пример: GEL)
         await openDropdownByLabel('From');
         await selectCurrencyFromMenu(base);
-        // 2) Выбираем валюту "To" = quote (пример: USD)
         await openDropdownByLabel('To');
         await selectCurrencyFromMenu(quote);
         await new Promise(resolve => setTimeout(resolve, 1000));
-        // 3) Устанавливаем сумму в поле "From" (пример: 100)
         await setFromAmount(amount);
-        // Ждем, пока поле "To" заполнится (значение > 0)
-        await page.waitForFunction(() => {
+        const fromValueCheck = await page.evaluate(() => {
+            const spans = Array.from(document.querySelectorAll('span.text-gray-300.uppercase.text-sm.font-noto'));
+            const fromSpan = spans.find((s) => (s.textContent || '').trim() === 'From');
+            const container = fromSpan?.closest('div.relative');
+            const input = container?.querySelector('input[placeholder="0.00"]');
+            return {
+                found: !!input,
+                value: input?.value || null
+            };
+        });
+        const toFieldExists = await page.evaluate(() => {
             const spans = Array.from(document.querySelectorAll('span.text-gray-300.uppercase.text-sm.font-noto'));
             const toSpan = spans.find((s) => (s.textContent || '').trim() === 'To');
             const container = toSpan?.closest('div.relative');
             const input = container?.querySelector('input[placeholder="0.00"]');
-            if (!input)
-                return false;
-            const raw = (input.value || '').replace(/\s+/g, '').replace(',', '.');
-            const num = parseFloat(raw);
-            return !isNaN(num) && num > 0;
-        }, { timeout: 5000 }).catch(() => null);
-        // (убрано отправление второго сообщения — используем caption у фото)
-        // Снимок карточки Convert без блока подсказок и кнопки Continue
+            return {
+                found: !!input,
+                value: input?.value || null
+            };
+        });
         try {
-            // Находим элемент карточки по заголовку "Convert"
+            await page.waitForFunction(() => {
+                const spans = Array.from(document.querySelectorAll('span.text-gray-300.uppercase.text-sm.font-noto'));
+                const toSpan = spans.find((s) => (s.textContent || '').trim() === 'To');
+                const container = toSpan?.closest('div.relative');
+                const input = container?.querySelector('input[placeholder="0.00"]');
+                if (!input)
+                    return false;
+                const raw = (input.value || '').replace(/\s+/g, '').replace(',', '.');
+                const num = parseFloat(raw);
+                return !isNaN(num) && num > 0;
+            }, { timeout: 15000, polling: 500 });
+        }
+        catch (e) {
+            const debugValue = await page.evaluate(() => {
+                const spans = Array.from(document.querySelectorAll('span.text-gray-300.uppercase.text-sm.font-noto'));
+                const toSpan = spans.find((s) => (s.textContent || '').trim() === 'To');
+                const container = toSpan?.closest('div.relative');
+                const input = container?.querySelector('input[placeholder="0.00"]');
+                return {
+                    found: !!input,
+                    value: input?.value || null,
+                    placeholder: input?.placeholder || null
+                };
+            });
+        }
+        try {
+            await page.waitForTimeout(1000);
+            const closeModal = await page.evaluate(() => {
+                const buttons = Array.from(document.querySelectorAll('button'));
+                const dontShowButton = buttons.find((btn) => btn.textContent?.trim().toLowerCase().includes('dont show again') ||
+                    btn.textContent?.trim().toLowerCase().includes("don't show again"));
+                if (dontShowButton) {
+                    dontShowButton.click();
+                    return true;
+                }
+                return false;
+            });
+            if (closeModal) {
+                await page.waitForTimeout(500);
+            }
+        }
+        catch (e) {
+            console.log(`[kursi] Ошибка при закрытии модального окна (игнорируем):`, e);
+        }
+        try {
             const [cardHandle] = await page.$x("//p[normalize-space(.)='Convert']/ancestor::div[contains(@class,'bg-primary-900')][1]");
             if (cardHandle) {
-                // Удаляем блок подсказок и кнопку Continue внутри карточки
                 await cardHandle.evaluate((el) => {
-                    // Удалить контейнер с подсказками и кнопкой Continue (второй блок flex-col gap-6 с Continue)
                     const allCols = Array.from(el.querySelectorAll('div.flex.flex-col.gap-6'));
                     for (const col of allCols) {
                         const hasContinue = Array.from(col.querySelectorAll('button')).some((b) => (b.textContent || '').includes('Continue'));
@@ -170,7 +328,6 @@ export const kursiRateModule = async (msg) => {
                 });
                 await page.waitForTimeout(100);
                 const buf = await cardHandle.screenshot({ type: 'png' });
-                // Парсим значение поля To для подписи
                 const toValue = await page.evaluate(() => {
                     const spans = Array.from(document.querySelectorAll('span.text-gray-300.uppercase.text-sm.font-noto'));
                     const toSpan = spans.find((s) => (s.textContent || '').trim() === 'To');
@@ -178,26 +335,21 @@ export const kursiRateModule = async (msg) => {
                     const input = container?.querySelector('input[placeholder="0.00"]');
                     return input ? input.value : null;
                 });
-                // Формируем caption по шаблону ОДНИМ сообщением (включая расчёт с делителем)
                 const formattedAmount = amount.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                 let caption = `${formattedAmount} ${base} → ${quote}`;
                 if (toValue) {
-                    // Правильно парсим число: если есть и запятая и точка, запятая - тысячи, точка - десятичные
-                    // Убираем пробелы, затем убираем запятые (разделители тысяч), оставляем точку
                     let cleaned = toValue.replace(/\s+/g, '');
                     if (cleaned.includes(',') && cleaned.includes('.')) {
-                        // Формат "3,691.40" - убираем запятые (тысячи), точка остается
                         cleaned = cleaned.replace(/,/g, '');
                     }
                     else if (cleaned.includes(',')) {
-                        // Только запятая - может быть десятичный разделитель (европейский формат)
                         cleaned = cleaned.replace(',', '.');
                     }
                     const num = parseFloat(cleaned);
                     if (!isNaN(num) && amount > 0) {
                         const formattedToTight = num.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                        const rateB2Q = num / amount; // 1 base в quote
-                        const rateQ2B = rateB2Q > 0 ? 1 / rateB2Q : 0; // 1 quote в base
+                        const rateB2Q = num / amount;
+                        const rateQ2B = rateB2Q > 0 ? 1 / rateB2Q : 0;
                         const rateB2QStr = rateB2Q.toLocaleString('ru-RU', { minimumFractionDigits: 6, maximumFractionDigits: 8 });
                         const rateQ2BStr = rateQ2B.toLocaleString('ru-RU', { minimumFractionDigits: 6, maximumFractionDigits: 8 });
                         caption += `\n\n1 ${base} = ${rateB2QStr}${quote}`;
@@ -208,21 +360,29 @@ export const kursiRateModule = async (msg) => {
                             const formattedFinal = finalAmount.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
                             const convertedForFormula = num.toFixed(2).replace('.', ',');
                             const divisorForFormula = String(divisor).replace('.', ',');
-                            caption += `\n\n📊Расчет с делителем ${divisorForFormula}:\n`;
+                            caption += `\n\n📊Rate adjustment:\n`;
                             caption += `<code>${convertedForFormula} / ${divisorForFormula} = ${formattedFinal}</code>`;
+                        }
+                        if (calcInfo) {
+                            caption += `\n\n<code>${calcInfo.lines.join('\n')}</code>\n\n` +
+                                `<code>${calcInfo.exprDisplay}</code> = <code>${calcInfo.finalFormatted}</code>`;
                         }
                     }
                 }
                 await bot.sendPhoto(chatId, buf, { caption, parse_mode: 'HTML' });
             }
         }
-        catch { }
+        catch (e) {
+            if (e instanceof Error) {
+                console.error(`[kursi] Сообщение об ошибке: ${e.message}`);
+                console.error(`[kursi] Stack: ${e.stack}`);
+            }
+        }
     }
     catch (e) {
-        console.error("/ккурс error:", e);
+        console.error(`[kursi] ОШИБКА:`, e);
     }
     finally {
-        // Гарантируем закрытие браузера в любом случае
         if (browser) {
             try {
                 if (browser.isConnected()) {

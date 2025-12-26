@@ -14,12 +14,10 @@ export const sendOrdersReportXls = async (msg, scope, overrideUser) => {
             await bot.sendMessage(chatId, "❌ Сначала зарегистрируйся через /start.");
             return;
         }
-        // Права для выгрузки всех заявок
         if (scope === "all" && currentUser.role !== "admin") {
             await bot.sendMessage(chatId, "⛔ Выгрузка всех заявок доступна только администраторам.");
             return;
         }
-        // Запрос заявок
         let query = supabase
             .from("order")
             .select("id, rub_get, rub_give, rate, usdt_amount, sent_usdt, remaining_usdt, status, created_at, updated_at, user_id")

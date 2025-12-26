@@ -38,7 +38,6 @@ export const updateOrderModule = async (msg) => {
             await bot.sendMessage(chatId, `❌ Заявка #${orderId} не найдена.`);
             return;
         }
-        // 2️⃣ Разбираем аргументы
         const updates = {};
         if (newFmt) {
             const rubGet = parseFloat(newFmt[2].replace(/\s+/g, "").replace(",", "."));
@@ -58,7 +57,6 @@ export const updateOrderModule = async (msg) => {
             await bot.sendMessage(chatId, "⚠️ Не указано ни одно корректное поле.");
             return;
         }
-        // 3️⃣ Обновляем заявку
         const { data: newOrder, error } = await supabase
             .from("order")
             .update({ ...updates, updated_at: new Date().toISOString() })
@@ -88,7 +86,6 @@ export const updateOrderModule = async (msg) => {
                 diffText += `• <b>${label}</b>: <code>${oldVal}</code> → <code>${newVal}</code>\n`;
             }
         }
-        // 5️⃣ Обновляем сообщение у пользователя (если есть message_id)
         if (newOrder.chat_id && newOrder.message_id) {
             const messageText = `Заявка: <b><code>${newOrder.id}</code></b>\n` +
                 `----\n` +
@@ -107,7 +104,6 @@ export const updateOrderModule = async (msg) => {
                 parse_mode: "HTML",
             });
         }
-        // 6️⃣ Отправляем уведомление бухгалтеру
         await bot.sendMessage(chatId, `✅ Заявка #${orderId} обновлена.\n${diffText || "Без изменений."}`, { parse_mode: "HTML" });
     }
     catch (error) {

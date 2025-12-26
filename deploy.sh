@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# Скрипт для обновления и перезапуска бота на сервере
 
 set -e
 
@@ -26,7 +25,6 @@ if [ ! -f "dist/utils/puppeteer.js" ]; then
     exit 1
 fi
 
-# Проверяем, что новый код содержит нужные строки
 if ! grep -q "findBrowserExecutable" dist/utils/puppeteer.js; then
     echo "❌ ОШИБКА: Старый код в dist/utils/puppeteer.js!"
     exit 1
